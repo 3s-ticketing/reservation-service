@@ -16,10 +16,39 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update
-    show-sql: true
+      ddl-auto: validate
+    show-sql: false
 
-  eureka:
-    client:
-      service-url:
-        defaultZone: http://localhost:8761/eureka
+  flyway:
+    enabled: true
+    schemas: reservation
+    locations: classpath:db/migration
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: reservation-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka
+
+# 커스텀 토픽 이름 (재정의 가능)
+topics:
+  match:
+    canceled: match.canceled
+  reservation:
+    confirmed: reservation.confirmed
+    canceled: reservation.canceled
+
+# 좌석 TTL 만료 스케줄러
+scheduler:
+  held-seat-expiry:
+    delay-ms: 30000
