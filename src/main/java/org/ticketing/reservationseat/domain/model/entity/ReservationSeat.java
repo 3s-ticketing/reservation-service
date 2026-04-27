@@ -1,4 +1,4 @@
-package org.ticketing.reservationseat.domain.model;
+package org.ticketing.reservationseat.domain.model.entity;
 
 import jakarta.persistence.AttributeOverride;
 import jakarta.persistence.AttributeOverrides;
@@ -17,6 +17,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.ticketing.common.domain.BaseEntity;
 import org.ticketing.reservationseat.domain.exception.InvalidReservationSeatStateException;
+import org.ticketing.reservationseat.domain.model.enums.ReservationSeatStatus;
 
 /**
  * 예약 좌석(ReservationSeat) 어그리게이트 루트.
@@ -124,6 +125,15 @@ public class ReservationSeat extends BaseEntity {
     private void transitionTo(ReservationSeatStatus target) {
         if (!this.seatStatus.canTransitionTo(target)) {
             throw new InvalidReservationSeatStateException(this.seatStatus, target);
+        }
+        this.seatStatus = target;
+    }
+
+    public void updateStatus(ReservationSeatStatus target) {
+        if (!this.seatStatus.canTransitionTo(target)) {
+            throw new IllegalStateException(
+                    String.format("'%s' → '%s' 상태 전이는 허용되지 않습니다.", this.seatStatus, target)
+            );
         }
         this.seatStatus = target;
     }

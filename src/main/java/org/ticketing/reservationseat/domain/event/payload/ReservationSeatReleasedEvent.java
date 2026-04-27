@@ -2,7 +2,7 @@ package org.ticketing.reservationseat.domain.event.payload;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
-import org.ticketing.reservationseat.domain.model.ReservationSeatStatus;
+import org.ticketing.reservationseat.domain.model.enums.ReservationSeatStatus;
 
 /**
  * 좌석 점유가 해제(EXPIRED 또는 CANCELED)될 때 발행되는 이벤트.

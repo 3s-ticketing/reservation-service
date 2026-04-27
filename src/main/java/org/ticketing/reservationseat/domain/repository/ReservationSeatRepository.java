@@ -4,7 +4,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.ticketing.reservationseat.domain.model.ReservationSeat;
+import org.ticketing.reservationseat.domain.model.entity.ReservationSeat;
 
 public interface ReservationSeatRepository {
 
