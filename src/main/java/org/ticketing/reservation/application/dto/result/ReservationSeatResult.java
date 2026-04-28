@@ -1,12 +1,14 @@
-package org.ticketing.reservationseat.application.dto.result;
+package org.ticketing.reservation.application.dto.result;
 
 import java.util.UUID;
-import org.ticketing.reservationseat.domain.model.entity.ReservationSeat;
-import org.ticketing.reservationseat.domain.model.enums.ReservationSeatStatus;
+import org.ticketing.reservation.domain.model.ReservationSeat;
+import org.ticketing.reservation.domain.model.ReservationSeatStatus;
 
+/**
+ * 자식 좌석 엔티티의 애플리케이션 계층 표현.
+ */
 public record ReservationSeatResult(
         UUID id,
-        UUID reservationId,
         UUID matchId,
         UUID stadiumId,
         UUID seatId,
@@ -18,7 +20,6 @@ public record ReservationSeatResult(
     public static ReservationSeatResult from(ReservationSeat seat) {
         return new ReservationSeatResult(
                 seat.getId(),
-                seat.getReservationId(),
                 seat.getMatchId(),
                 seat.getStadiumId(),
                 seat.getSeatId(),

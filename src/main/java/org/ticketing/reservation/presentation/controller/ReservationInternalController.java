@@ -16,8 +16,10 @@ import org.ticketing.reservation.presentation.dto.response.ReservationResponseDt
  *
  * <p>/internal/** 경로는 외부에 노출되지 않도록 게이트웨이에서 차단해야 한다.
  * <ul>
- *   <li>confirm — 결제 완료 이벤트 수신 후 예매 확정 (ReservationSeat·Ticket 연동은 별도 브랜치)</li>
- *   <li>expire  — TTL 만료 이벤트 수신 후 예매 만료</li>
+ *   <li>confirm — 결제 완료 이벤트 수신 후 예매 확정. 루트가 COMPLETED 로 전이되며
+ *       자식 좌석들도 RESERVED 로 함께 전이된다.</li>
+ *   <li>expire  — TTL 만료 이벤트 수신 후 예매 만료. 루트가 EXPIRED 로 전이되며
+ *       HOLD 좌석들도 EXPIRED 로 함께 전이된다.</li>
  * </ul>
  */
 @RestController

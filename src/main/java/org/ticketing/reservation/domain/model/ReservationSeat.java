@@ -1,4 +1,4 @@
-package org.ticketing.reservationseat.domain.model.entity;
+package org.ticketing.reservation.domain.model;
 
 import jakarta.persistence.AttributeOverride;
 import jakarta.persistence.AttributeOverrides;
@@ -6,27 +6,27 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.util.UUID;
 import lombok.AccessLevel;
-import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.ticketing.common.domain.BaseEntity;
-import org.ticketing.reservationseat.domain.exception.InvalidReservationSeatStateException;
-import org.ticketing.reservationseat.domain.model.enums.ReservationSeatStatus;
+import org.ticketing.reservation.domain.exception.InvalidReservationSeatStateException;
 
 /**
- * 예약 좌석(ReservationSeat) 어그리게이트 루트.
+ * 예약 좌석 엔티티.
  *
- * <p>Reservation 과 분리된 별도 어그리게이트이며, 좌석 점유의 생명주기를 책임진다.
- * 점유 시작 시 {@link ReservationSeatStatus#HOLD} 로 생성되고,
- * 결제가 끝나면 {@code RESERVED} 로 확정된다.
+ * <p>{@link Reservation} 어그리게이트 루트의 자식 엔티티이다.
+ * 외부에서 직접 생성·조회·변경하지 않으며, 항상 루트({@code Reservation})를 통해 다룬다.
  *
- * <p>동일 (match_id, seat_id) 에 대해 활성(HOLD/RESERVED) 레코드가 동시에
+ * <p>동일 {@code (match_id, seat_id)} 에 대해 활성(HOLD/RESERVED) 레코드가 동시에
  * 존재하지 않도록 DB 유니크 인덱스 {@code uq_reservation_seat_active} 가
  * 마이그레이션에 포함되어 있다.
  */
@@ -45,8 +45,10 @@ public class ReservationSeat extends BaseEntity {
     @Column(columnDefinition = "uuid")
     private UUID id;
 
-    @Column(name = "reservation_id", nullable = false, columnDefinition = "uuid")
-    private UUID reservationId;
+    /** 부모 {@link Reservation} 으로의 역참조. 컬럼명은 reservation_id 그대로 유지. */
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "reservation_id", nullable = false, columnDefinition = "uuid")
+    private Reservation reservation;
 
     @Column(name = "match_id", nullable = false, columnDefinition = "uuid")
     private UUID matchId;
@@ -70,10 +72,15 @@ public class ReservationSeat extends BaseEntity {
     @Column(name = "price", nullable = false)
     private Long price;
 
-    @Builder
-    private ReservationSeat(UUID reservationId, UUID matchId, UUID stadiumId, UUID seatId,
-                            UUID seatGradeId, String seatNumber, Long price) {
-        this.reservationId = reservationId;
+    /**
+     * 패키지 한정 생성자. 좌석은 {@link Reservation#addSeat} 를 통해서만 생성된다.
+     */
+    ReservationSeat(Reservation reservation, UUID matchId, UUID stadiumId, UUID seatId,
+                    UUID seatGradeId, String seatNumber, Long price) {
+        if (price == null || price < 0L) {
+            throw new InvalidReservationSeatStateException("좌석 가격은 0 이상이어야 합니다.");
+        }
+        this.reservation = reservation;
         this.matchId = matchId;
         this.stadiumId = stadiumId;
         this.seatId = seatId;
@@ -83,57 +90,25 @@ public class ReservationSeat extends BaseEntity {
         this.seatStatus = ReservationSeatStatus.HOLD;
     }
 
-    /**
-     * 좌석 점유(HOLD) 생성 팩토리.
-     */
-    public static ReservationSeat hold(UUID reservationId, UUID matchId, UUID stadiumId,
-                                       UUID seatId, UUID seatGradeId,
-                                       String seatNumber, Long price) {
-        if (price == null || price < 0L) {
-            throw new InvalidReservationSeatStateException("좌석 가격은 0 이상이어야 합니다.");
-        }
-        return ReservationSeat.builder()
-                .reservationId(reservationId)
-                .matchId(matchId)
-                .stadiumId(stadiumId)
-                .seatId(seatId)
-                .seatGradeId(seatGradeId)
-                .seatNumber(seatNumber)
-                .price(price)
-                .build();
-    }
-
     // ──────────────────────────────────────────
-    // 상태 전이
+    // 상태 전이 (Reservation 루트에서만 호출됨)
     // ──────────────────────────────────────────
 
-    /** 결제 완료 시 HOLD → RESERVED. */
-    public void confirm() {
+    void confirm() {
         transitionTo(ReservationSeatStatus.RESERVED);
     }
 
-    /** TTL 만료 시 HOLD → EXPIRED. */
-    public void expire() {
+    void expire() {
         transitionTo(ReservationSeatStatus.EXPIRED);
     }
 
-    /** 사용자/관리자 취소 시 CANCELED. */
-    public void cancel() {
+    void cancel() {
         transitionTo(ReservationSeatStatus.CANCELED);
     }
 
     private void transitionTo(ReservationSeatStatus target) {
         if (!this.seatStatus.canTransitionTo(target)) {
             throw new InvalidReservationSeatStateException(this.seatStatus, target);
-        }
-        this.seatStatus = target;
-    }
-
-    public void updateStatus(ReservationSeatStatus target) {
-        if (!this.seatStatus.canTransitionTo(target)) {
-            throw new IllegalStateException(
-                    String.format("'%s' → '%s' 상태 전이는 허용되지 않습니다.", this.seatStatus, target)
-            );
         }
         this.seatStatus = target;
     }

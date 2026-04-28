@@ -1,4 +1,4 @@
-package org.ticketing.reservationseat.domain.exception;
+package org.ticketing.reservation.domain.exception;
 
 import java.util.UUID;
 import org.ticketing.common.exception.ConflictException;

@@ -1,4 +1,4 @@
-package org.ticketing.reservationseat.domain.model.enums;
+package org.ticketing.reservation.domain.model;
 
 /**
  * 예약 좌석 상태.

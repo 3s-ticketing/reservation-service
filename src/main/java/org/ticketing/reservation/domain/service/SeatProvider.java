@@ -1,4 +1,4 @@
-package org.ticketing.reservationseat.domain.service;
+package org.ticketing.reservation.domain.service;
 
 import java.util.UUID;
 

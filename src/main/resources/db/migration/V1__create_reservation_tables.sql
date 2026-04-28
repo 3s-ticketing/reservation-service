@@ -28,11 +28,10 @@ CREATE INDEX idx_reservation_status   ON reservation.p_reservation (status)   WH
 
 
 -- ── p_reservation_seat (예약 좌석) ────────────────────────────
--- 어그리게이트 루트: ReservationSeat
--- 예매(reservation_id)와 별도 어그리게이트로 분리하여 좌석 점유/해제만 책임진다.
+-- Reservation 어그리게이트의 자식 엔티티. 루트(reservation_id)를 통해서만 접근된다.
 CREATE TABLE reservation.p_reservation_seat (
     id              UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
-    reservation_id  UUID        NOT NULL,
+    reservation_id  UUID        NOT NULL REFERENCES reservation.p_reservation (id),
     match_id        UUID        NOT NULL,
     stadium_id      UUID        NOT NULL,
     seat_id         UUID        NOT NULL,

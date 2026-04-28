@@ -1,7 +1,7 @@
-package org.ticketing.reservationseat.domain.exception;
+package org.ticketing.reservation.domain.exception;
 
 import org.ticketing.common.exception.ConflictException;
-import org.ticketing.reservationseat.domain.model.enums.ReservationSeatStatus;
+import org.ticketing.reservation.domain.model.ReservationSeatStatus;
 
 public class InvalidReservationSeatStateException extends ConflictException {
 
