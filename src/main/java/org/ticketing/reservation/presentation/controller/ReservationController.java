@@ -1,0 +1,69 @@
+package org.ticketing.reservation.presentation.controller;
+
+import jakarta.validation.Valid;
+import java.util.List;
+import java.util.UUID;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+import org.ticketing.common.util.SecurityUtil;
+import org.ticketing.reservation.application.dto.command.CancelReservationCommand;
+import org.ticketing.reservation.application.dto.query.GetMyReservationsQuery;
+import org.ticketing.reservation.application.dto.query.GetReservationQuery;
+import org.ticketing.reservation.application.service.ReservationApplicationService;
+import org.ticketing.reservation.infrastructure.security.SecurityContextProvider;
+import org.ticketing.reservation.presentation.dto.request.CreateReservationRequestDto;
+import org.ticketing.reservation.presentation.dto.response.ReservationResponseDto;
+
+@RestController
+@RequestMapping("/api/reservations")
+@RequiredArgsConstructor
+public class ReservationController {
+
+    private final ReservationApplicationService reservationApplicationService;
+    private final SecurityContextProvider securityContextProvider;
+
+    /** POST /api/reservations — 예매 생성 */
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public ReservationResponseDto create(@RequestBody @Valid CreateReservationRequestDto request) {
+        UUID userId = SecurityUtil.getCurrentUserIdOrThrow();
+        return ReservationResponseDto.from(
+                reservationApplicationService.create(request.toCommand(userId))
+        );
+    }
+
+    /** GET /api/reservations — 내 예매 목록 조회 */
+    @GetMapping
+    public List<ReservationResponseDto> getMyReservations() {
+        UUID userId = SecurityUtil.getCurrentUserIdOrThrow();
+        return reservationApplicationService
+                .findMyReservations(new GetMyReservationsQuery(userId))
+                .stream()
+                .map(ReservationResponseDto::from)
+                .toList();
+    }
+
+    /** GET /api/reservations/{reservationId} — 예매 상세 조회 */
+    @GetMapping("/{reservationId}")
+    public ReservationResponseDto get(@PathVariable UUID reservationId) {
+        return ReservationResponseDto.from(
+                reservationApplicationService.findById(new GetReservationQuery(reservationId))
+        );
+    }
+
+    /** DELETE /api/reservations/{reservationId} — 예매 취소 */
+    @DeleteMapping("/{reservationId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void cancel(@PathVariable UUID reservationId) {
+        String canceledBy = securityContextProvider.getCurrentUsername();
+        reservationApplicationService.cancel(new CancelReservationCommand(reservationId, canceledBy));
+    }
+}
