@@ -1,4 +1,4 @@
-package org.ticketing.ticket.domain.model;
+package org.ticketing.ticket.domain.model.entity;
 
 import jakarta.persistence.AttributeOverride;
 import jakarta.persistence.AttributeOverrides;
@@ -17,6 +17,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.ticketing.common.domain.BaseEntity;
 import org.ticketing.ticket.domain.exception.InvalidTicketStateException;
+import org.ticketing.ticket.domain.model.enums.TicketStatus;
 
 /**
  * 티켓(Ticket) 어그리게이트 루트.

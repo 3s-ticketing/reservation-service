@@ -1,4 +1,4 @@
-package org.ticketing.ticket.domain.model;
+package org.ticketing.ticket.domain.model.enums;
 
 /**
  * 티켓 사용 상태.

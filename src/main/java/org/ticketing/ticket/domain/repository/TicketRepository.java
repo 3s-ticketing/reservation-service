@@ -3,7 +3,7 @@ package org.ticketing.ticket.domain.repository;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.ticketing.ticket.domain.model.Ticket;
+import org.ticketing.ticket.domain.model.entity.Ticket;
 
 public interface TicketRepository {
 

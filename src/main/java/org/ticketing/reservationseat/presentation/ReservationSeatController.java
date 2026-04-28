@@ -17,7 +17,7 @@ import org.ticketing.reservationseat.application.dto.result.ReservationSeatResul
 import org.ticketing.reservationseat.application.service.ReservationSeatService;
 
 @RestController
-@RequestMapping("/api/v1/reservation-seats")
+@RequestMapping("/api/reservation-seats")
 @RequiredArgsConstructor
 public class ReservationSeatController {
 
