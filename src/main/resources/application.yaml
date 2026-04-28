@@ -1,12 +1,13 @@
 server:
-  port: 0
+  port: 8081
 
 spring:
   application:
     name: reservation-service
 
-  config:
-    import: "optional:configserver:http://localhost:8888"
+  cloud:
+    config:
+      enabled: false  # 컨피그 서버 체크 비활성화
 
   datasource:
     url: jdbc:postgresql://localhost:5432/mydatabase
@@ -39,6 +40,8 @@ eureka:
   client:
     service-url:
       defaultZone: http://localhost:8761/eureka
+      enabled: false
+
 
 # 커스텀 토픽 이름 (재정의 가능)
 topics:
