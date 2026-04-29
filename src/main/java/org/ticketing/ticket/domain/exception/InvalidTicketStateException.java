@@ -1,7 +1,7 @@
 package org.ticketing.ticket.domain.exception;
 
 import org.ticketing.common.exception.ConflictException;
-import org.ticketing.ticket.domain.model.TicketStatus;
+import org.ticketing.ticket.domain.model.enums.TicketStatus;
 
 public class InvalidTicketStateException extends ConflictException {
 

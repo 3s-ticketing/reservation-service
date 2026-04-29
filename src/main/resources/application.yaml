@@ -1,54 +1,57 @@
 server:
-  port: 0
+  port: 8081
 
 spring:
   application:
     name: reservation-service
 
-  config:
-    import: "optional:configserver:http://localhost:8888"
+  cloud:
+    config:
+      enabled: false
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/mydatabase
-    username: myuser
-    password: secret
+    url: jdbc:postgresql://localhost:15432/ticketing
+    username: ticketing
+    password: change-me-local
     driver-class-name: org.postgresql.Driver
 
   jpa:
     hibernate:
       ddl-auto: validate
-    show-sql: false
+    show-sql: true
+
+  data:
+    redis:
+      host: localhost
+      port: 16379
 
   flyway:
     enabled: true
     schemas: reservation
     locations: classpath:db/migration
+    baseline-on-migrate: true # 기존 DB가 있을 경우 대비
 
-  kafka:
-    bootstrap-servers: localhost:9092
-    consumer:
-      group-id: reservation-service
-      auto-offset-reset: earliest
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-    producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+  # 3. Kafka 비활성화 (필요 시 주석 해제하여 사용)
+  # 지금은 Kafka 컨테이너를 안 띄우므로 설정이 있으면 에러가 날 수 있음
+#  kafka:
+#    enabled: false
+#    bootstrap-servers: localhost:19092 # 외부 포트 기준
 
+# 4. Eureka 비활성화 유지
 eureka:
   client:
-    service-url:
-      defaultZone: http://localhost:8761/eureka
+    enabled: false
 
 # 커스텀 토픽 이름 (재정의 가능)
-topics:
-  match:
-    canceled: match.canceled
-  reservation:
-    confirmed: reservation.confirmed
-    canceled: reservation.canceled
+#topics:
+#  match:
+#    canceled: match.canceled
+#  reservation:
+#    confirmed: reservation.confirmed
+#    canceled: reservation.canceled
 
 # 좌석 TTL 만료 스케줄러
-scheduler:
-  held-seat-expiry:
-    delay-ms: 30000
+# REDIS 사용으로 불필요할 것 같아 주석처리
+#scheduler:
+#  held-seat-expiry:
+#    delay-ms: 30000

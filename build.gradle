@@ -36,6 +36,10 @@ dependencyManagement {
 }
 
 dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+
 	// 공통 모듈 (org.ticketing:common:2.0-SNAPSHOT 로 publish 됨)
 	implementation 'org.ticketing:common:2.0-SNAPSHOT'
 
@@ -46,17 +50,21 @@ dependencies {
 	annotationProcessor 'com.querydsl:querydsl-apt:5.1.0:jakarta'
 	implementation 'com.querydsl:querydsl-jpa:5.1.0:jakarta'
 
+	//lombok
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
 	testCompileOnly 'org.projectlombok:lombok'
 	testAnnotationProcessor 'org.projectlombok:lombok'
 
+	//runtime
 	runtimeOnly 'org.postgresql:postgresql'
 	runtimeOnly 'com.h2database:h2'     // local 프로파일 인메모리 DB
-
 	testRuntimeOnly 'com.h2database:h2'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+	//redis
+	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 }
 
 tasks.named('test') {
