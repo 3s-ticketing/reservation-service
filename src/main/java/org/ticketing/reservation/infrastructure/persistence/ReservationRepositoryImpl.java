@@ -39,4 +39,9 @@ public class ReservationRepositoryImpl implements ReservationRepository {
     public List<Reservation> findAllByMatchIdAndStatus(UUID matchId, ReservationStatus status) {
         return jpa.findAllByMatchIdAndStatus(matchId, status);
     }
+
+    @Override
+    public Reservation saveAndFlush(Reservation reservation) {
+        return jpa.saveAndFlush(reservation);
+    }
 }

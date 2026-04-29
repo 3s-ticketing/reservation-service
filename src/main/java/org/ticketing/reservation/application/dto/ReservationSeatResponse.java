@@ -1,6 +1,6 @@
 package org.ticketing.reservation.application.dto;
 
-import org.ticketing.reservationseat.domain.model.enums.ReservationSeatStatus;
+import org.ticketing.reservation.domain.model.ReservationSeatStatus;
 
 import java.util.UUID;
 

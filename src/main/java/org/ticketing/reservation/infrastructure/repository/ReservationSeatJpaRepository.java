@@ -1,7 +1,6 @@
 package org.ticketing.reservation.infrastructure.repository;
 
 import jakarta.persistence.LockModeType;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -9,53 +8,47 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import org.ticketing.reservationseat.domain.model.entity.ReservationSeat;
+import org.ticketing.reservation.domain.model.ReservationSeat;
+import org.ticketing.reservation.domain.model.ReservationSeatStatus;
 
 public interface ReservationSeatJpaRepository extends JpaRepository<ReservationSeat, UUID> {
 
-    // soft delete 미적용 레코드만 조회
     @Query("""
             SELECT rs FROM ReservationSeat rs
             WHERE rs.id = :id AND rs.deletedAt IS NULL
             """)
     Optional<ReservationSeat> findActiveById(@Param("id") UUID id);
 
+    // 팀원 엔티티가 @ManyToOne Reservation reservation 이면 reservation.id로 조회
     @Query("""
             SELECT rs FROM ReservationSeat rs
-            WHERE rs.reservationId = :reservationId AND rs.deletedAt IS NULL
+            WHERE rs.reservation.id = :reservationId AND rs.deletedAt IS NULL
             """)
     List<ReservationSeat> findAllByReservationId(@Param("reservationId") UUID reservationId);
 
-    // 만료 스케줄러용 - HOLD 상태이면서 threshold 이전에 생성된 레코드
-    @Query("""
-            SELECT rs FROM ReservationSeat rs
-            WHERE rs.seatStatus = 'HOLD'
-            AND rs.createdAt < :threshold
-            AND rs.deletedAt IS NULL
-            """)
-    List<ReservationSeat> findHeldOlderThan(@Param("threshold") LocalDateTime threshold);
-
-    // 비관적 락 - isActive() = HOLD or RESERVED
+    // RESERVED 중복 방지 - 최후 방어선
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
-        SELECT rs FROM ReservationSeat rs
-        WHERE rs.seatId = :seatId
-        AND rs.matchId = :matchId
-        AND rs.seatStatus IN ('HOLD', 'RESERVED')
-        AND rs.deletedAt IS NULL
-        """)
-    Optional<ReservationSeat> findHoldOrReservedSeat(
-            @Param("seatId") UUID seatId,
-            @Param("matchId") UUID matchId
+            SELECT rs FROM ReservationSeat rs
+            WHERE rs.matchId = :matchId
+            AND rs.seatId = :seatId
+            AND rs.seatStatus = 'RESERVED'
+            AND rs.deletedAt IS NULL
+            """)
+    Optional<ReservationSeat> findActiveByMatchIdAndSeatId(
+            @Param("matchId") UUID matchId,
+            @Param("seatId") UUID seatId
     );
 
-    // 4매 제한 - isActive() 기준으로 카운트
+    // 경기 취소 일괄 처리
     @Query("""
-        SELECT COUNT(rs) FROM ReservationSeat rs
-        WHERE rs.reservationId = :reservationId
-        AND rs.seatStatus IN ('HOLD', 'RESERVED')
-        AND rs.deletedAt IS NULL
-        """)
-    int countActiveByReservationId(@Param("reservationId") UUID reservationId);
-
+            SELECT rs FROM ReservationSeat rs
+            WHERE rs.matchId = :matchId
+            AND rs.seatStatus = :status
+            AND rs.deletedAt IS NULL
+            """)
+    List<ReservationSeat> findAllByMatchIdAndStatus(
+            @Param("matchId") UUID matchId,
+            @Param("status") ReservationSeatStatus status
+    );
 }

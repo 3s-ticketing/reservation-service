@@ -1,12 +1,12 @@
 package org.ticketing.reservation.infrastructure.repository;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
-import org.ticketing.reservationseat.domain.model.entity.ReservationSeat;
+import org.ticketing.reservation.domain.model.ReservationSeat;
+import org.ticketing.reservation.domain.model.ReservationSeatStatus;
 import org.ticketing.reservation.domain.repository.ReservationSeatRepository;
 
 @Repository
@@ -36,21 +36,17 @@ public class ReservationSeatRepositoryImpl implements ReservationSeatRepository 
     }
 
     @Override
+    public Optional<ReservationSeat> findActiveByMatchIdAndSeatId(UUID matchId, UUID seatId) {
+        return jpaRepository.findActiveByMatchIdAndSeatId(matchId, seatId);
+    }
+
+    @Override
     public List<ReservationSeat> findAllByReservationId(UUID reservationId) {
         return jpaRepository.findAllByReservationId(reservationId);
     }
 
     @Override
-    public List<ReservationSeat> findHeldOlderThan(LocalDateTime threshold) {
-        return jpaRepository.findHeldOlderThan(threshold);
-    }
-
-    // 서비스에서 직접 사용하는 추가 메서드 (도메인 인터페이스 외)
-    public Optional<ReservationSeat> findHoldOrReservedSeat(UUID seatId, UUID matchId) {
-        return jpaRepository.findHoldOrReservedSeat(seatId, matchId);
-    }
-
-    public int countActiveByReservationId(UUID reservationId) {
-        return jpaRepository.countActiveByReservationId(reservationId);
+    public List<ReservationSeat> findAllByMatchIdAndStatus(UUID matchId, ReservationSeatStatus status) {
+        return jpaRepository.findAllByMatchIdAndStatus(matchId, status);
     }
 }

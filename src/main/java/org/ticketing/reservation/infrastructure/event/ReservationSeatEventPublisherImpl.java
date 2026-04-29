@@ -3,9 +3,9 @@ package org.ticketing.reservation.infrastructure.event;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.ticketing.reservation.domain.event.ReservationSeatEventPublisher;
-import org.ticketing.reservationseat.domain.event.payload.ReservationSeatHeldEvent;
-import org.ticketing.reservationseat.domain.event.payload.ReservationSeatReleasedEvent;
-import org.ticketing.reservationseat.domain.event.payload.ReservationSeatReservedEvent;
+import org.ticketing.reservation.domain.event.payload.ReservationSeatHeldEvent;
+import org.ticketing.reservation.domain.event.payload.ReservationSeatReleasedEvent;
+import org.ticketing.reservation.domain.event.payload.ReservationSeatReservedEvent;
 
 @Slf4j
 @Component

@@ -4,86 +4,168 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.ticketing.reservation.application.dto.command.CreateReservationSeatCommand;
-import org.ticketing.reservationseat.application.dto.result.ReservationSeatResult;
+import org.ticketing.reservation.application.dto.command.CancelReservationSeatCommand;
+import org.ticketing.reservation.application.dto.command.ConfirmReservationSeatCommand;
+import org.ticketing.reservation.application.dto.command.HoldReservationSeatCommand;
+import org.ticketing.reservation.application.dto.result.ReservationSeatResult;
 import org.ticketing.reservation.domain.event.ReservationSeatEventPublisher;
-import org.ticketing.reservationseat.domain.event.payload.ReservationSeatHeldEvent;
-import org.ticketing.reservationseat.domain.model.entity.ReservationSeat;
-import org.ticketing.reservationseat.domain.service.SeatProvider;
-import org.ticketing.reservation.infrastructure.repository.ReservationSeatRepositoryImpl;
+import org.ticketing.reservation.domain.event.payload.ReservationSeatHeldEvent;
+import org.ticketing.reservation.domain.event.payload.ReservationSeatReleasedEvent;
+import org.ticketing.reservation.domain.event.payload.ReservationSeatReservedEvent;
+import org.ticketing.reservation.domain.exception.ReservationNotFoundException;
+import org.ticketing.reservation.domain.exception.ReservationSeatNotFoundException;
+import org.ticketing.reservation.domain.exception.SeatAlreadyHeldException;
+import org.ticketing.reservation.domain.model.Reservation;
+import org.ticketing.reservation.domain.model.ReservationSeat;
+import org.ticketing.reservation.domain.model.ReservationSeatStatus;
+import org.ticketing.reservation.domain.model.redis.SeatHold;
+import org.ticketing.reservation.domain.repository.ReservationRepository;
+import org.ticketing.reservation.domain.repository.ReservationSeatRepository;
+import org.ticketing.reservation.domain.service.SeatHoldRepository;
+import org.ticketing.reservation.domain.service.SeatProvider;
+import org.ticketing.common.exception.BadRequestException;
+import org.ticketing.common.exception.ConflictException;
+import org.ticketing.common.exception.ForbiddenException;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ReservationSeatService {
 
-    private final ReservationSeatRepositoryImpl reservationSeatRepository;
+    private static final int MAX_SEAT_PER_RESERVATION = 4;
+
+    private final ReservationRepository reservationRepository;
+    private final ReservationSeatRepository reservationSeatRepository;
+    private final SeatHoldRepository seatHoldRepository;
     private final SeatProvider seatProvider;
     private final ReservationSeatEventPublisher eventPublisher;
 
-    // TODO: Feign 연동 시 Provider 추가
-    // private final ReservationProvider reservationProvider;
-    // private final MatchProvider matchProvider;
-
-    // ───────────────── Command ─────────────────
-
     @Transactional
-    public ReservationSeatResult createReservationSeat(CreateReservationSeatCommand command) {
+    public void holdSeat(HoldReservationSeatCommand command) {
 
-        // TODO: ReservationProvider - 예약 조회 및 검증
-        UUID matchId = UUID.randomUUID(); // reservation.getMatchId()
+        Reservation reservation = reservationRepository.findActiveById(command.reservationId())
+                .orElseThrow(() -> new ReservationNotFoundException(command.reservationId()));
 
-        // 좌석 존재 및 사용 가능 여부
+        UUID matchId = reservation.getMatchId();
+
         if (!seatProvider.existsAndUsable(matchId, command.seatId())) {
-            throw new IllegalArgumentException("유효하지 않은 좌석입니다.");
+            throw new BadRequestException("유효하지 않은 좌석입니다.");
         }
 
-        // 좌석 정보 스냅샷 조회
-        SeatProvider.SeatSnapshot snapshot = seatProvider.fetchSnapshot(matchId, command.seatId());
-
-        // 구매 제한
-        int currentCount = reservationSeatRepository.countActiveByReservationId(command.reservationId());
-        if (currentCount >= 4) {
-            throw new IllegalStateException("예약 가능한 최대 좌석 수를 초과하였습니다.");
-        }
-
-        // 중복 선점 방지
-        reservationSeatRepository.findHoldOrReservedSeat(command.seatId(), matchId)
+        reservationSeatRepository.findActiveByMatchIdAndSeatId(matchId, command.seatId())
                 .ifPresent(rs -> {
-                    throw new IllegalStateException("이미 선점된 좌석입니다.");
+                    throw new SeatAlreadyHeldException(matchId, command.seatId());
                 });
 
-        // 예약 좌석 생성
-        ReservationSeat reservationSeat = ReservationSeat.hold(
+        SeatHold seatHold = new SeatHold(
                 command.reservationId(),
+                command.userId(),
                 matchId,
-                snapshot.stadiumId(),
-                snapshot.seatId(),
-                snapshot.seatGradeId(),
-                snapshot.seatNumber(),
-                snapshot.price()
+                command.seatId(),
+                OffsetDateTime.now().plusSeconds(600)
         );
 
-        ReservationSeat saved = reservationSeatRepository.saveAndFlush(reservationSeat);
+        boolean held = seatHoldRepository.hold(matchId, command.seatId(), seatHold);
+        if (!held) {
+            throw new SeatAlreadyHeldException(matchId, command.seatId());
+        }
 
-        // HOLD 이벤트 발행
         eventPublisher.publishHeld(new ReservationSeatHeldEvent(
+                null,
+                command.reservationId(),
+                matchId,
+                command.seatId(),
+                null,
+                OffsetDateTime.now()
+        ));
+    }
+
+    @Transactional
+    public ReservationSeatResult confirmReservationSeat(ConfirmReservationSeatCommand command) {
+
+        Reservation reservation = reservationRepository.findActiveById(command.reservationId())
+                .orElseThrow(() -> new ReservationNotFoundException(command.reservationId()));
+
+        UUID matchId = reservation.getMatchId();
+
+        SeatHold hold = seatHoldRepository.find(matchId, command.seatId())
+                .orElseThrow(() -> new ConflictException("선점 정보가 만료되었습니다."));
+
+        if (!hold.isOwnedBy(command.userId(), command.reservationId())) {
+            throw new ForbiddenException("해당 좌석의 선점 정보가 일치하지 않습니다.");
+        }
+
+        long currentCount = reservation.getSeats().stream()
+                .filter(seat -> seat.getSeatStatus().isActive())
+                .count();
+        if (currentCount >= MAX_SEAT_PER_RESERVATION) {
+            throw new BadRequestException("예약 가능한 최대 좌석 수를 초과하였습니다.");
+        }
+
+        SeatProvider.SeatSnapshot snapshot = seatProvider.fetchSnapshot(matchId, command.seatId());
+
+        ReservationSeat newSeat = reservation.addSeat(snapshot);
+        Reservation saved = reservationRepository.saveAndFlush(reservation);
+
+        ReservationSeat savedSeat = saved.getSeats().stream()
+                .filter(s -> s.getSeatId().equals(command.seatId()))
+                .findFirst()
+                .orElse(newSeat);
+
+        try {
+            seatHoldRepository.release(matchId, command.seatId());
+        } catch (Exception e) {
+            log.warn("[Redis] 선점 해제 실패 - TTL 자연 만료 대기 matchId={}, seatId={}",
+                    matchId, command.seatId(), e);
+        }
+
+        eventPublisher.publishReserved(new ReservationSeatReservedEvent(
+                savedSeat.getId(),
                 saved.getId(),
-                saved.getReservationId(),
-                saved.getMatchId(),
-                saved.getSeatId(),
-                saved.getPrice(),
+                matchId,
+                savedSeat.getSeatId(),
                 OffsetDateTime.now()
         ));
 
-        return ReservationSeatResult.from(saved);
+        return ReservationSeatResult.from(savedSeat);
     }
-    //쿼리
-    public ReservationSeatResult getReservationSeat(UUID id) {
-        ReservationSeat seat = reservationSeatRepository.findActiveById(id)
-                .orElseThrow(() -> new IllegalArgumentException("예약 좌석을 찾을 수 없습니다."));
+
+    @Transactional
+    public ReservationSeatResult cancelReservationSeat(CancelReservationSeatCommand command) {
+
+        ReservationSeat seat = reservationSeatRepository.findActiveById(command.reservationSeatId())
+                .orElseThrow(() -> new ReservationSeatNotFoundException(command.reservationSeatId()));
+
+        Reservation reservation = seat.getReservation();
+
+        ReservationSeat canceled = reservation.releaseSeat(command.reservationSeatId());
+        reservation.recalculateTotalPrice();
+        reservationRepository.save(reservation);
+
+        eventPublisher.publishReleased(new ReservationSeatReleasedEvent(
+                canceled.getId(),
+                reservation.getId(),
+                reservation.getMatchId(),
+                canceled.getSeatId(),
+                ReservationSeatStatus.CANCELED,
+                OffsetDateTime.now()
+        ));
+
+        return ReservationSeatResult.from(canceled);
+    }
+
+    @Transactional
+    public void releaseHold(UUID matchId, UUID seatId) {
+        seatHoldRepository.release(matchId, seatId);
+    }
+
+    public ReservationSeatResult getReservationSeat(UUID reservationSeatId) {
+        ReservationSeat seat = reservationSeatRepository.findActiveById(reservationSeatId)
+                .orElseThrow(() -> new ReservationSeatNotFoundException(reservationSeatId));
         return ReservationSeatResult.from(seat);
     }
 

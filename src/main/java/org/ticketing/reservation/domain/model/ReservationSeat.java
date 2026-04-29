@@ -72,9 +72,8 @@ public class ReservationSeat extends BaseEntity {
     @Column(name = "price", nullable = false)
     private Long price;
 
-    /**
-     * 패키지 한정 생성자. 좌석은 {@link Reservation#addSeat} 를 통해서만 생성된다.
-     */
+    // 패키지 한정 생성자. 좌석은 {@link Reservation#addSeat} 를 통해서만 생성
+    // 생성자 - HOLD 제거, RESERVED로 바로 생성
     ReservationSeat(Reservation reservation, UUID matchId, UUID stadiumId, UUID seatId,
                     UUID seatGradeId, String seatNumber, Long price) {
         if (price == null || price < 0L) {
@@ -87,21 +86,11 @@ public class ReservationSeat extends BaseEntity {
         this.seatGradeId = seatGradeId;
         this.seatNumber = seatNumber;
         this.price = price;
-        this.seatStatus = ReservationSeatStatus.HOLD;
+        this.seatStatus = ReservationSeatStatus.RESERVED;
     }
 
-    // ──────────────────────────────────────────
-    // 상태 전이 (Reservation 루트에서만 호출됨)
-    // ──────────────────────────────────────────
-
-    void confirm() {
-        transitionTo(ReservationSeatStatus.RESERVED);
-    }
-
-    void expire() {
-        transitionTo(ReservationSeatStatus.EXPIRED);
-    }
-
+    // confirm(), expire() 제거 - HOLD 상태 전이가 없으므로 불필요
+    // cancel()만 유지
     void cancel() {
         transitionTo(ReservationSeatStatus.CANCELED);
     }

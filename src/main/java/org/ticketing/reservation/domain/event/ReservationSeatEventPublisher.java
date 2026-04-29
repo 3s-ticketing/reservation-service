@@ -1,8 +1,8 @@
 package org.ticketing.reservation.domain.event;
 
-import org.ticketing.reservationseat.domain.event.payload.ReservationSeatHeldEvent;
-import org.ticketing.reservationseat.domain.event.payload.ReservationSeatReleasedEvent;
-import org.ticketing.reservationseat.domain.event.payload.ReservationSeatReservedEvent;
+import org.ticketing.reservation.domain.event.payload.ReservationSeatHeldEvent;
+import org.ticketing.reservation.domain.event.payload.ReservationSeatReleasedEvent;
+import org.ticketing.reservation.domain.event.payload.ReservationSeatReservedEvent;
 
 public interface ReservationSeatEventPublisher {
 

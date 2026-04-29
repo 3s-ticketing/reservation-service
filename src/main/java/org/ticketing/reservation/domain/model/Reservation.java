@@ -161,15 +161,13 @@ public class Reservation extends BaseEntity {
     // 상태 전이 — 루트가 자식 좌석 상태도 함께 끌고 간다.
     // ──────────────────────────────────────────
 
-    /** 결제 성공 → 예매 확정 + 좌석 RESERVED. */
+    // 예매 확정, 좌석은 addSeat 시점에 이미 RESERVED이므로 상태 전이 불필요
     public void complete() {
         transitionTo(ReservationStatus.COMPLETED);
-        this.seats.stream()
-                .filter(seat -> seat.getSeatStatus() == ReservationSeatStatus.HOLD)
-                .forEach(ReservationSeat::confirm);
+        // ✅ seats는 이미 RESERVED 상태 - 추가 전이 없음
     }
 
-    /** 사용자/시스템 취소 + 활성 좌석 CANCELED. */
+    // 사용자/시스템 취소 + RESERVED 좌석 CANCELED
     public void cancel() {
         transitionTo(ReservationStatus.CANCELLED);
         this.seats.stream()
@@ -177,12 +175,10 @@ public class Reservation extends BaseEntity {
                 .forEach(ReservationSeat::cancel);
     }
 
-    /** TTL 만료 + HOLD 좌석 EXPIRED. */
+    // TTL 만료 -> EXPIRED 상태 전이, 좌석은 Redis에만 있었으므로 DB 변경 없음
     public void expire() {
         transitionTo(ReservationStatus.EXPIRED);
-        this.seats.stream()
-                .filter(seat -> seat.getSeatStatus() == ReservationSeatStatus.HOLD)
-                .forEach(ReservationSeat::expire);
+        // ✅ HOLD는 Redis-only였으므로 DB seats 변경 없음
     }
 
     private void transitionTo(ReservationStatus target) {

@@ -12,24 +12,18 @@ package org.ticketing.reservation.domain.model;
  * </ul>
  */
 public enum ReservationSeatStatus {
-    AVAILABLE,
-    HOLD,
     RESERVED,
-    EXPIRED,
     CANCELED;
 
     public boolean canTransitionTo(ReservationSeatStatus target) {
-        if (target == null || target == this) {
-            return false;
-        }
+        if (target == null || target == this) return false;
         return switch (this) {
-            case HOLD     -> target == RESERVED || target == EXPIRED || target == CANCELED;
             case RESERVED -> target == CANCELED;
-            case AVAILABLE, EXPIRED, CANCELED -> false;
+            case CANCELED -> false;
         };
     }
 
     public boolean isActive() {
-        return this == HOLD || this == RESERVED;
+        return this == RESERVED;
     }
 }

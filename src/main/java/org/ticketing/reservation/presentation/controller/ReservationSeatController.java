@@ -3,6 +3,8 @@ package org.ticketing.reservation.presentation.controller;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -10,8 +12,15 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.ticketing.reservation.application.dto.command.CancelReservationSeatCommand;
+import org.ticketing.reservation.application.dto.command.ConfirmReservationSeatCommand;
+import org.ticketing.reservation.application.dto.command.HoldReservationSeatCommand;
+import org.ticketing.reservation.application.dto.request.ConfirmReservationSeatRequest;
+import org.ticketing.reservation.application.dto.request.HoldReservationSeatRequest;
 import org.ticketing.reservation.application.dto.result.ReservationSeatResult;
+import org.ticketing.reservation.application.service.ReservationSeatService;
 
 @RestController
 @RequestMapping("/api/reservation-seats")
@@ -20,34 +29,56 @@ public class ReservationSeatController {
 
     private final ReservationSeatService reservationSeatService;
 
-    //예약 좌석 생성
-     //일반 회원만 가능 - X-User-Id 헤더로 유저 식별 (Gateway JWT 인증/인가 처리)
-    // TODO : 인증/인가 연결 후 수정
-    @PostMapping
-    public ReservationSeatResult createReservationSeat(
+    // 좌석 선점 (Redis HOLD)
+    @PostMapping("/hold")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public void holdSeat(
             @RequestHeader("X-User-Id") UUID userId,
-            @RequestBody CreateReservationSeatRequest request
+            @RequestBody HoldReservationSeatRequest request
     ) {
-        return reservationSeatService.createReservationSeat(
-                new CreateReservationSeatCommand(userId, request.reservationId(), request.seatId())
+        reservationSeatService.holdSeat(
+                new HoldReservationSeatCommand(userId, request.reservationId(), request.seatId())
         );
     }
 
-    // 전체 좌석 조회
-    @GetMapping
-    public List<ReservationSeatResult> getReservationSeats(
+    // 결제 확정 - DB INSERT (RESERVED)
+    @PostMapping("/confirm")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ReservationSeatResult confirmReservationSeat(
             @RequestHeader("X-User-Id") UUID userId,
-            @RequestParam UUID reservationId
+            @RequestBody ConfirmReservationSeatRequest request
     ) {
-        return reservationSeatService.getReservationSeats(reservationId);
+        return reservationSeatService.confirmReservationSeat(
+                new ConfirmReservationSeatCommand(userId, request.reservationId(), request.seatId())
+        );
     }
 
-    // 좌석 상세 조회
+    // 개별 좌석 취소 (RESERVED -> CANCELED)
+    @DeleteMapping("/{reservationSeatId}")
+    public ReservationSeatResult cancelReservationSeat(
+            @RequestHeader("X-User-Id") UUID userId,
+            @PathVariable UUID reservationSeatId
+    ) {
+        return reservationSeatService.cancelReservationSeat(
+                new CancelReservationSeatCommand(userId, reservationSeatId)
+        );
+    }
+
+    // 예약 좌석 상세 조회
     @GetMapping("/{reservationSeatId}")
     public ReservationSeatResult getReservationSeat(
             @RequestHeader("X-User-Id") UUID userId,
             @PathVariable UUID reservationSeatId
     ) {
         return reservationSeatService.getReservationSeat(reservationSeatId);
+    }
+
+    // 예매의 전체 좌석 조회
+    @GetMapping
+    public List<ReservationSeatResult> getReservationSeats(
+            @RequestHeader("X-User-Id") UUID userId,
+            @RequestParam UUID reservationId
+    ) {
+        return reservationSeatService.getReservationSeats(reservationId);
     }
 }
