@@ -63,6 +63,10 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
+	//flyway (Spring Boot 3.5 + Postgres 16: postgresql 모듈 분리됨)
+	implementation 'org.flywaydb:flyway-core'
+	runtimeOnly    'org.flywaydb:flyway-database-postgresql'
+
 	//redis
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 }

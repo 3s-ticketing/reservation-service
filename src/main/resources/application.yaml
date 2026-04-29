@@ -1,5 +1,5 @@
 server:
-  port: 8081
+  port: 8082
 
 spring:
   application:
@@ -10,14 +10,15 @@ spring:
       enabled: false
 
   datasource:
-    url: jdbc:postgresql://localhost:15432/ticketing
-    username: ticketing
-    password: change-me-local
+    # currentSchema=reservation: 엔티티에 schema 미명시이므로 JDBC search_path 로 강제.
+    url: jdbc:postgresql://localhost:${POSTGRES_PORT:15432}/${POSTGRES_DB:ticketing}?currentSchema=reservation
+    username: ${POSTGRES_USER:ticketing}
+    password: ${POSTGRES_PASSWORD:ticketing1234}
     driver-class-name: org.postgresql.Driver
 
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: none          # Flyway 가 스키마 단일 소유자. Hibernate 는 검증 안 함.
     show-sql: true
 
   data:
