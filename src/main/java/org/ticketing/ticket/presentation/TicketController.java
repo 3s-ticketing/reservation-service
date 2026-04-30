@@ -44,9 +44,11 @@ public class TicketController {
     @PatchMapping("/{ticketId}/use")
     public TicketResult use(
             @PathVariable UUID ticketId,
-            @RequestHeader("X-User-Id") UUID userId
+            @RequestHeader("X-User-Id") UUID userId,
+            @RequestHeader(value = "X-User-Role", defaultValue = "USER") String role // ✅ 추가
     ) {
-        return ticketService.use(new UseTicketCommand(ticketId, userId));
+        boolean isAdmin = role.equals("ADMIN") || role.equals("CLUB_ADMIN");
+        return ticketService.use(new UseTicketCommand(ticketId, userId, isAdmin));
     }
 
     // 티켓 취소 (예매 취소 시 - 추후 Kafka Consumer로 대체)

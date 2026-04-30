@@ -14,4 +14,6 @@ public interface SeatHoldRepository {
 
     // 선점 해제
     void release(UUID matchId, UUID seatId);
+
+    int countHoldsByReservationId(UUID reservationId);
 }

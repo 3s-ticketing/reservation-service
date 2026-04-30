@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
+import org.ticketing.common.exception.InternalServerException;
 import org.ticketing.reservation.domain.model.redis.SeatHold;
 import org.ticketing.reservation.domain.service.SeatHoldRepository;
 
@@ -27,19 +28,6 @@ public class RedisSeatHoldRepository implements SeatHoldRepository {
     }
 
     @Override
-    public boolean hold(UUID matchId, UUID seatId, SeatHold value) {
-        try {
-            String json = objectMapper.writeValueAsString(value);
-            Boolean success = redisTemplate.opsForValue()
-                    .setIfAbsent(key(matchId, seatId), json, TTL);
-            return Boolean.TRUE.equals(success);
-        } catch (Exception e) {
-            log.error("[Redis] 좌석 선점 실패 - matchId={}, seatId={}", matchId, seatId, e);
-            return false;
-        }
-    }
-
-    @Override
     public Optional<SeatHold> find(UUID matchId, UUID seatId) {
         try {
             String json = redisTemplate.opsForValue().get(key(matchId, seatId));
@@ -51,8 +39,55 @@ public class RedisSeatHoldRepository implements SeatHoldRepository {
         }
     }
 
+    // Key: holds:{reservationId} → Set of seatIds
+    private String holdSetKey(UUID reservationId) {
+        return "holds:" + reservationId;
+    }
+
+    @Override
+    public boolean hold(UUID matchId, UUID seatId, SeatHold value) {
+        try {
+            String json = objectMapper.writeValueAsString(value);
+            Boolean success = redisTemplate.opsForValue()
+                    .setIfAbsent(key(matchId, seatId), json, TTL);
+
+            if (Boolean.TRUE.equals(success)) {
+                // ✅ 예약별 HOLD Set에 추가
+                redisTemplate.opsForSet().add(holdSetKey(value.reservationId()), seatId.toString());
+                redisTemplate.expire(holdSetKey(value.reservationId()), TTL);
+                return true;
+            }
+            return false;
+        } catch (Exception e) {
+            log.error("[Redis] 좌석 선점 실패", e);
+            throw new InternalServerException("Redis 좌석 선점 실패");
+        }
+    }
+
     @Override
     public void release(UUID matchId, UUID seatId) {
-        redisTemplate.delete(key(matchId, seatId));
+        try {
+            String json = redisTemplate.opsForValue().get(key(matchId, seatId));
+            if (json != null) {
+                SeatHold hold = objectMapper.readValue(json, SeatHold.class);
+                // ✅ 예약별 HOLD Set에서 제거
+                redisTemplate.opsForSet().remove(holdSetKey(hold.reservationId()), seatId.toString());
+            }
+            redisTemplate.delete(key(matchId, seatId));
+        } catch (Exception e) {
+            log.warn("[Redis] 좌석 선점 해제 실패 - TTL 자연 만료 대기", e);
+        }
     }
+
+    @Override
+    public int countHoldsByReservationId(UUID reservationId) {
+        try {
+            Long count = redisTemplate.opsForSet().size(holdSetKey(reservationId));
+            return count != null ? count.intValue() : 0;
+        } catch (Exception e) {
+            log.warn("[Redis] HOLD 카운트 조회 실패 - 0 반환", e);
+            return 0;
+        }
+    }
+
 }

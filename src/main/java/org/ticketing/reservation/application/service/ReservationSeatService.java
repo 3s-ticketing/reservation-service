@@ -52,6 +52,16 @@ public class ReservationSeatService {
 
         UUID matchId = reservation.getMatchId();
 
+        // ✅ DB RESERVED + Redis HOLD 합산하여 4매 제한 검증
+        long reservedCount = reservation.getSeats().stream()
+                .filter(seat -> seat.getSeatStatus().isActive())
+                .count();
+        int holdCount = seatHoldRepository.countHoldsByReservationId(command.reservationId());
+
+        if (reservedCount + holdCount >= MAX_SEAT_PER_RESERVATION) {
+            throw new BadRequestException("예약 가능한 최대 좌석 수를 초과하였습니다.");
+        }
+
         if (!seatProvider.existsAndUsable(matchId, command.seatId())) {
             throw new BadRequestException("유효하지 않은 좌석입니다.");
         }
@@ -109,6 +119,7 @@ public class ReservationSeatService {
         SeatProvider.SeatSnapshot snapshot = seatProvider.fetchSnapshot(matchId, command.seatId());
 
         ReservationSeat newSeat = reservation.addSeat(snapshot);
+        reservation.recalculateTotalPrice();
         Reservation saved = reservationRepository.saveAndFlush(reservation);
 
         ReservationSeat savedSeat = saved.getSeats().stream()
