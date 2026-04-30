@@ -1,15 +1,17 @@
 package org.ticketing.reservation.domain.model;
 
 /**
- * 예약 좌석 상태.
+ * DB 에 영속되는 좌석 상태.
  *
- * <p>전이 규칙:
+ * <p>실시간 점유(HOLD)는 Redis 가 단독 관리하므로 DB 행은 항상 결제 확정(RESERVED)
+ * 시점에야 생성된다. 따라서 본 enum 은 두 종착 상태만 가진다:
+ *
  * <ul>
- *   <li>HOLD     → RESERVED (결제 완료) / EXPIRED (TTL 만료) / CANCELED (사용자 취소)</li>
- *   <li>RESERVED → CANCELED (환불·관리 취소)</li>
- *   <li>AVAILABLE 는 외부 시스템 좌석 상태와의 호환을 위해 정의되며 본 테이블에서는 통상 발생하지 않는다.</li>
- *   <li>EXPIRED, CANCELED 는 종착 상태</li>
+ *   <li>{@link #RESERVED} — 결제 확정. 매치 종료 시점까지 유지.</li>
+ *   <li>{@link #CANCELED} — 사용자/시스템 취소. 종착 상태.</li>
  * </ul>
+ *
+ * <p>Redis 측 상태(HOLD / RESERVED)는 {@code SeatLockStatus} 참고.
  */
 public enum ReservationSeatStatus {
     RESERVED,
