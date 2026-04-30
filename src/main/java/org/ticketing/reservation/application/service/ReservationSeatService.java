@@ -1,5 +1,6 @@
 package org.ticketing.reservation.application.service;
 
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -26,6 +27,7 @@ import org.ticketing.reservation.domain.repository.ReservationRepository;
 import org.ticketing.reservation.domain.repository.ReservationSeatRepository;
 import org.ticketing.reservation.domain.service.SeatHoldRepository;
 import org.ticketing.reservation.domain.service.SeatProvider;
+import org.ticketing.reservation.infrastructure.redis.SeatReservedTtlPolicy;
 import org.ticketing.common.exception.BadRequestException;
 import org.ticketing.common.exception.ConflictException;
 import org.ticketing.common.exception.ForbiddenException;
@@ -41,6 +43,7 @@ public class ReservationSeatService {
     private final ReservationRepository reservationRepository;
     private final ReservationSeatRepository reservationSeatRepository;
     private final SeatHoldRepository seatHoldRepository;
+    private final SeatReservedTtlPolicy reservedTtlPolicy;
     private final SeatProvider seatProvider;
     private final ReservationSeatEventPublisher eventPublisher;
 
@@ -71,7 +74,7 @@ public class ReservationSeatService {
                     throw new SeatAlreadyHeldException(matchId, command.seatId());
                 });
 
-        SeatHold seatHold = new SeatHold(
+        SeatHold seatHold = SeatHold.hold(
                 command.reservationId(),
                 command.userId(),
                 matchId,
@@ -127,11 +130,24 @@ public class ReservationSeatService {
                 .findFirst()
                 .orElse(newSeat);
 
-        try {
-            seatHoldRepository.release(matchId, command.seatId());
-        } catch (Exception e) {
-            log.warn("[Redis] 선점 해제 실패 - TTL 자연 만료 대기 matchId={}, seatId={}",
-                    matchId, command.seatId(), e);
+        // HOLD → RESERVED 전이. ticketOpenAt 기반 TTL 적용.
+        // (TTL 정책이 ticketOpenAt 미수신 시 fallback 사용)
+        Duration reservedTtl = reservedTtlPolicy.ttlFor(matchId);
+        SeatHold reservedPayload = SeatHold.reserved(
+                command.reservationId(),
+                command.userId(),
+                matchId,
+                command.seatId(),
+                OffsetDateTime.now().plus(reservedTtl)
+        );
+        boolean confirmed = seatHoldRepository.confirm(
+                matchId, command.seatId(), reservedPayload, reservedTtl);
+        if (!confirmed) {
+            // HOLD 가 만료됐거나 다른 owner — DB 는 이미 RESERVED 로 INSERT 됐으므로
+            // 보상 로직은 추후(스케줄러/이벤트) 처리. 지금은 경고 로그만.
+            log.warn("[Redis] HOLD→RESERVED 전이 실패 — DB 영속화는 완료됨. "
+                    + "matchId={}, seatId={}, reservationId={}",
+                    matchId, command.seatId(), command.reservationId());
         }
 
         eventPublisher.publishReserved(new ReservationSeatReservedEvent(
