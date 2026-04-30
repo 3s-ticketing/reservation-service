@@ -77,18 +77,14 @@ public class TicketController {
         return ticketService.getTicketByReservation(reservationId);
     }
 
-    // 내 티켓 목록 조회
-    @GetMapping("/me")
-    public List<TicketResult> getMyTickets(@RequestHeader("X-User-Id") UUID userId) {
-        return ticketService.getMyTickets(userId);
-    }
-
     @PatchMapping("/verify")
     public TicketResult verify(
             @RequestParam UUID reservationId,
-            @RequestHeader("X-User-Id") UUID adminId
+            @RequestHeader("X-User-Id") UUID adminId,
+            @RequestHeader(value = "X-User-Role", defaultValue = "USER") String role
     ) {
         TicketResult ticket = ticketService.getTicketByReservation(reservationId);
-        return ticketService.use(new UseTicketCommand(ticket.id(), adminId));
+        boolean isAdmin = role.equals("ADMIN") || role.equals("CLUB_ADMIN");
+        return ticketService.use(new UseTicketCommand(ticket.id(), adminId, isAdmin));
     }
 }
