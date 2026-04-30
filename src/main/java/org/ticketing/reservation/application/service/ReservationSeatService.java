@@ -8,6 +8,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.ticketing.reservation.application.dto.command.CancelReservationSeatCommand;
 import org.ticketing.reservation.application.dto.command.ConfirmReservationSeatCommand;
 import org.ticketing.reservation.application.dto.command.HoldReservationSeatCommand;
@@ -168,10 +170,15 @@ public class ReservationSeatService {
                 .orElseThrow(() -> new ReservationSeatNotFoundException(command.reservationSeatId()));
 
         Reservation reservation = seat.getReservation();
+        UUID matchId = reservation.getMatchId();    // afterCommit 훅에서 사용
+        UUID seatId = seat.getSeatId();
 
         ReservationSeat canceled = reservation.releaseSeat(command.reservationSeatId());
         reservation.recalculateTotalPrice();
         reservationRepository.save(reservation);
+
+        // DB tx 커밋 후 Redis 락 해제 — 롤백 시 Redis 가 먼저 풀리는 일을 막는다.
+        registerRedisReleaseAfterCommit(matchId, seatId);
 
         eventPublisher.publishReleased(new ReservationSeatReleasedEvent(
                 canceled.getId(),
@@ -183,6 +190,35 @@ public class ReservationSeatService {
         ));
 
         return ReservationSeatResult.from(canceled);
+    }
+
+    /**
+     * Redis 좌석 락 해제를 현재 트랜잭션의 afterCommit 페이즈에 예약한다.
+     *
+     * <p>트랜잭션 컨텍스트 밖에서 호출되면 즉시 실행한다(보호적 fallback).
+     * release 실패는 로그만 남기고 무시 — TTL 자연 만료 또는 reconciliation 잡으로 보완.
+     */
+    private void registerRedisReleaseAfterCommit(UUID matchId, UUID seatId) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    try {
+                        seatHoldRepository.release(matchId, seatId);
+                    } catch (Exception e) {
+                        log.warn("[Redis] afterCommit 락 해제 실패 — 자연 만료 대기. "
+                                + "matchId={}, seatId={}", matchId, seatId, e);
+                    }
+                }
+            });
+        } else {
+            try {
+                seatHoldRepository.release(matchId, seatId);
+            } catch (Exception e) {
+                log.warn("[Redis] 락 해제 실패 — 자연 만료 대기. matchId={}, seatId={}",
+                        matchId, seatId, e);
+            }
+        }
     }
 
     @Transactional
