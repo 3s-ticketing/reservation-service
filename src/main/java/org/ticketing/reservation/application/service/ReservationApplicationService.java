@@ -1,5 +1,6 @@
 package org.ticketing.reservation.application.service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +17,7 @@ import org.ticketing.reservation.application.dto.result.ReservationResult;
 import org.ticketing.reservation.domain.exception.ReservationNotFoundException;
 import org.ticketing.reservation.domain.model.Reservation;
 import org.ticketing.reservation.domain.model.ReservationSeat;
+import org.ticketing.reservation.domain.model.ReservationStatus;
 import org.ticketing.reservation.domain.repository.ReservationRepository;
 import org.ticketing.reservation.domain.service.SeatHoldRepository;
 
@@ -100,6 +102,25 @@ public class ReservationApplicationService {
     // ──────────────────────────────────────────
     // 쿼리
     // ──────────────────────────────────────────
+
+    /**
+     * 특정 경기의 취소 가능한 예매 ID 목록 조회.
+     *
+     * <p>취소 가능 상태: {@code PENDING}(미결제), {@code COMPLETED}(결제 완료).
+     * 경기 취소 이벤트 수신 시 일괄 처리 대상 목록을 조회하는 데 사용된다.
+     *
+     * @param matchId 경기 ID
+     * @return 취소 가능한 예매 ID 목록 (없으면 빈 리스트)
+     */
+    @Transactional(readOnly = true)
+    public List<UUID> findCancellableReservationIds(UUID matchId) {
+        List<UUID> ids = new ArrayList<>();
+        reservationRepository.findAllByMatchIdAndStatus(matchId, ReservationStatus.PENDING)
+                .stream().map(Reservation::getId).forEach(ids::add);
+        reservationRepository.findAllByMatchIdAndStatus(matchId, ReservationStatus.COMPLETED)
+                .stream().map(Reservation::getId).forEach(ids::add);
+        return ids;
+    }
 
     @Transactional(readOnly = true)
     public ReservationResult findById(GetReservationQuery query) {

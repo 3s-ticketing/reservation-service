@@ -24,9 +24,20 @@ public class KafkaTopicConfig {
     @Value("${topics.reservation.confirmation.failed:reservation.confirmation.failed}")
     private String reservationConfirmationFailedTopic;
 
+    @Value("${topics.reservation.canceled:reservation.canceled}")
+    private String reservationCanceledTopic;
+
     @Bean
     public NewTopic reservationConfirmationFailedTopic() {
         return TopicBuilder.name(reservationConfirmationFailedTopic)
+                .partitions(partitions)
+                .replicas(replicas)
+                .build();
+    }
+
+    @Bean
+    public NewTopic reservationCanceledTopic() {
+        return TopicBuilder.name(reservationCanceledTopic)
                 .partitions(partitions)
                 .replicas(replicas)
                 .build();

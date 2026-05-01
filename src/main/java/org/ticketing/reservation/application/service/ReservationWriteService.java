@@ -1,5 +1,6 @@
 package org.ticketing.reservation.application.service;
 
+import java.time.OffsetDateTime;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -9,6 +10,8 @@ import org.ticketing.reservation.application.dto.command.ConfirmReservationComma
 import org.ticketing.reservation.application.dto.command.CreateReservationCommand;
 import org.ticketing.reservation.application.dto.command.ExpireReservationCommand;
 import org.ticketing.reservation.application.dto.result.ReservationResult;
+import org.ticketing.reservation.domain.event.ReservationEventPublisher;
+import org.ticketing.reservation.domain.event.payload.ReservationCancelledEvent;
 import org.ticketing.reservation.domain.exception.ReservationNotFoundException;
 import org.ticketing.reservation.domain.model.Reservation;
 import org.ticketing.reservation.domain.repository.ReservationRepository;
@@ -26,6 +29,7 @@ import org.ticketing.reservation.domain.repository.ReservationRepository;
 public class ReservationWriteService {
 
     private final ReservationRepository reservationRepository;
+    private final ReservationEventPublisher eventPublisher;
 
     // ──────────────────────────────────────────
     // 예매 생성 — 빈 PENDING 예매만 만든다 (좌석 없음).
@@ -44,6 +48,14 @@ public class ReservationWriteService {
         Reservation reservation = getActive(command.reservationId());
         reservation.cancel();
         reservation.delete(command.canceledBy());
+
+        // Outbox 트랜잭션 안에서 이벤트 등록 — payment-service 환불 트리거
+        eventPublisher.publishCancelled(new ReservationCancelledEvent(
+                reservation.getId(),
+                reservation.getUserId(),
+                reservation.getMatchId(),
+                OffsetDateTime.now()
+        ));
     }
 
     public ReservationResult confirm(ConfirmReservationCommand command) {

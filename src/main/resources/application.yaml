@@ -53,7 +53,10 @@ topics:
     completed: payment.completed
     failed: payment.failed
     refunded: payment.refunded
+  match:
+    canceled: match.canceled
   reservation:
+    canceled: reservation.canceled
     confirmation:
       failed: reservation.confirmation.failed
 
