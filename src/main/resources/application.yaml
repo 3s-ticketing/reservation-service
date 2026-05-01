@@ -52,6 +52,7 @@ topics:
   payment:
     completed: payment.completed
     failed: payment.failed
+    refunded: payment.refunded
   reservation:
     confirmation:
       failed: reservation.confirmation.failed

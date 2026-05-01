@@ -66,10 +66,9 @@ public class PaymentEventConsumer {
         PaymentCompletedEvent event = objectMapper.readValue(record.value(), PaymentCompletedEvent.class);
         log.info("[payment.completed] 수신 — paymentId={}, orderId={}", event.paymentId(), event.orderId());
 
-        UUID reservationId = UUID.fromString(event.orderId());
-        reservationApplicationService.confirm(new ConfirmReservationCommand(reservationId));
+        reservationApplicationService.confirm(new ConfirmReservationCommand(event.orderId()));
 
-        log.info("[payment.completed] 예매 확정 완료 — reservationId={}", reservationId);
+        log.info("[payment.completed] 예매 확정 완료 — reservationId={}", event.orderId());
     }
 
     /**
@@ -86,16 +85,14 @@ public class PaymentEventConsumer {
             log.error("[payment.completed.DLT] 예매 확정 최대 재시도 초과 — 환불 이벤트 발행. paymentId={}, orderId={}",
                     event.paymentId(), event.orderId());
 
-            UUID reservationId = UUID.fromString(event.orderId());
-
             Events.trigger(
                     UUID.randomUUID().toString(),
                     "RESERVATION",
-                    event.orderId(),
+                    event.orderId().toString(),
                     confirmationFailedTopic,
                     new ReservationConfirmationFailedEvent(
-                            event.paymentId(),
-                            reservationId,
+                            event.paymentId().toString(),
+                            event.orderId(),
                             "예매 확정 최대 재시도 횟수 초과"
                     )
             );

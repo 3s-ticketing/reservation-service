@@ -1,7 +1,6 @@
 package org.ticketing.reservation.infrastructure.messaging.consumer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -69,24 +68,22 @@ public class PaymentFailedEventConsumer {
     )
     public void consume(ConsumerRecord<String, String> record) throws Exception {
         PaymentFailedEvent event = objectMapper.readValue(record.value(), PaymentFailedEvent.class);
-        log.info("[payment.failed] 수신 — paymentId={}, orderId={}, reason={}",
-                event.paymentId(), event.orderId(), event.reason());
-
-        UUID reservationId = UUID.fromString(event.orderId());
+        log.info("[payment.failed] 수신 — paymentId={}, orderId={}",
+                event.paymentId(), event.orderId());
 
         try {
             // DB 만료 + Redis 좌석 락 즉시 해제 (DB 커밋 후)
-            reservationApplicationService.expire(new ExpireReservationCommand(reservationId));
-            log.info("[payment.failed] 예매 만료 및 좌석 해제 완료 — reservationId={}", reservationId);
+            reservationApplicationService.expire(new ExpireReservationCommand(event.orderId()));
+            log.info("[payment.failed] 예매 만료 및 좌석 해제 완료 — reservationId={}", event.orderId());
 
         } catch (InvalidReservationStateException e) {
             // 이미 EXPIRED / CANCELLED / COMPLETED 상태 → 멱등 처리
             log.info("[payment.failed] 예매가 이미 처리된 상태 (idempotent skip) — "
-                    + "reservationId={}, status={}", reservationId, e.getMessage());
+                    + "reservationId={}, status={}", event.orderId(), e.getMessage());
 
         } catch (ReservationNotFoundException e) {
             // 이미 삭제됐거나 존재하지 않는 예매 → 무시
-            log.warn("[payment.failed] 예매를 찾을 수 없음 (skip) — reservationId={}", reservationId);
+            log.warn("[payment.failed] 예매를 찾을 수 없음 (skip) — reservationId={}", event.orderId());
         }
         // 그 외 예외는 전파 → @RetryableTopic 재시도
     }
@@ -103,8 +100,8 @@ public class PaymentFailedEventConsumer {
         try {
             PaymentFailedEvent event = objectMapper.readValue(record.value(), PaymentFailedEvent.class);
             log.error("[payment.failed.DLT] 예매 만료 처리 최대 재시도 초과 — 수동 점검 필요. "
-                            + "paymentId={}, orderId={}, reason={}",
-                    event.paymentId(), event.orderId(), event.reason());
+                            + "paymentId={}, orderId={}",
+                    event.paymentId(), event.orderId());
             // 좌석은 HOLD TTL 자연 만료로 해제됨 (최대 15분 내)
             // reservation 상태는 PENDING 으로 남아 있으므로 별도 배치/reconciliation 잡 대상
         } catch (Exception e) {

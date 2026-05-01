@@ -113,6 +113,48 @@ public class TicketService {
         ticket.delete(deletedBy);
     }
 
+    /**
+     * 환불 등 시스템 이벤트로 인한 티켓 취소 + 소프트 삭제.
+     *
+     * <p>reservationId 로 활성 티켓을 조회한 뒤, 단일 트랜잭션 안에서
+     * 상태를 CANCELED 로 전이하고 소프트 삭제까지 완료한다.
+     *
+     * <h3>멱등성</h3>
+     * <ul>
+     *   <li>티켓이 없는 경우(미발급 또는 이미 삭제됨) — 무시</li>
+     *   <li>이미 CANCELED 상태인 경우 — 상태 전이 없이 삭제만 진행</li>
+     * </ul>
+     *
+     * @param reservationId 예매 ID
+     * @param deletedBy     삭제 주체 식별자 (예: "payment.refunded")
+     */
+    @Transactional
+    public void cancelAndDeleteByReservationId(UUID reservationId, String deletedBy) {
+        Ticket ticket = ticketRepository.findActiveByReservationId(reservationId)
+                .orElse(null);
+
+        if (ticket == null) {
+            log.info("[Ticket] 취소·삭제 대상 티켓 없음 (skip) — reservationId={}", reservationId);
+            return;
+        }
+
+        // AVAILABLE → CANCELED 전이 + 이벤트 발행
+        if (ticket.getStatus() == org.ticketing.ticket.domain.model.enums.TicketStatus.AVAILABLE) {
+            ticket.cancel();
+            eventPublisher.publishCanceled(new TicketCanceledEvent(
+                    ticket.getId(),
+                    ticket.getReservationId(),
+                    ticket.getUserId(),
+                    java.time.OffsetDateTime.now()
+            ));
+        }
+        // 이미 CANCELED 상태이면 상태 전이 없이 삭제만 진행
+
+        ticket.delete(deletedBy);
+        log.info("[Ticket] 환불 처리 — 티켓 취소+삭제 완료. ticketId={}, reservationId={}",
+                ticket.getId(), reservationId);
+    }
+
     // 쿼리
 
     public TicketResult getTicketByReservation(UUID reservationId) {
