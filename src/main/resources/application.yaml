@@ -31,24 +31,34 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: true # 기존 DB가 있을 경우 대비
 
-  # 3. Kafka 비활성화 (필요 시 주석 해제하여 사용)
-  # 지금은 Kafka 컨테이너를 안 띄우므로 설정이 있으면 에러가 날 수 있음
-#  kafka:
-#    enabled: false
-#    bootstrap-servers: localhost:19092 # 외부 포트 기준
+  kafka:
+    bootstrap-servers: localhost:19092
+    consumer:
+      group-id: ${spring.application.name}
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 
 # 4. Eureka 비활성화 유지
 eureka:
   client:
     enabled: false
 
-# 커스텀 토픽 이름 (재정의 가능)
-#topics:
-#  match:
-#    canceled: match.canceled
-#  reservation:
-#    confirmed: reservation.confirmed
-#    canceled: reservation.canceled
+# 토픽 이름
+topics:
+  payment:
+    completed: payment.completed
+  reservation:
+    confirmation:
+      failed: reservation.confirmation.failed
+
+kafka:
+  topic:
+    partitions: 3
+    replicas: 1
 
 # 좌석 TTL 만료 스케줄러
 # REDIS 사용으로 불필요할 것 같아 주석처리
