@@ -51,6 +51,7 @@ eureka:
 topics:
   payment:
     completed: payment.completed
+    failed: payment.failed
   reservation:
     confirmation:
       failed: reservation.confirmation.failed
@@ -60,8 +61,9 @@ kafka:
     partitions: 3
     replicas: 1
 
-# 좌석 TTL 만료 스케줄러
-# REDIS 사용으로 불필요할 것 같아 주석처리
-#scheduler:
-#  held-seat-expiry:
-#    delay-ms: 30000
+# 좌석 HOLD 만료 스케줄러 (HOLD → EXPIRE_PENDING 전이)
+# 결제 윈도우(10분) 경과 여부를 30초마다 점검한다.
+# Feign 미구현 구간에서는 UNKNOWN 반환 → TTL 자연 만료(1분 유예)에 위임.
+scheduler:
+  hold-expiry:
+    delay-ms: 30000

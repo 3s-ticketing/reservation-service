@@ -81,7 +81,7 @@ public class ReservationSeatService {
                 command.userId(),
                 matchId,
                 command.seatId(),
-                OffsetDateTime.now().plusSeconds(600)
+                OffsetDateTime.now().plusSeconds(660)  // 결제 윈도우(600s) + 유예(60s)
         );
 
         boolean held = seatHoldRepository.hold(matchId, command.seatId(), seatHold);
