@@ -1,6 +1,5 @@
 package org.ticketing.reservation.application.service;
 
-import java.time.OffsetDateTime;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -53,8 +52,7 @@ public class ReservationWriteService {
         eventPublisher.publishCancelled(new ReservationCancelledEvent(
                 reservation.getId(),
                 reservation.getUserId(),
-                reservation.getMatchId(),
-                OffsetDateTime.now()
+                command.cancelReason()
         ));
     }
 

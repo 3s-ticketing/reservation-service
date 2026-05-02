@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.ticketing.common.util.SecurityUtil;
 import org.ticketing.reservation.application.dto.command.CancelReservationCommand;
+import org.ticketing.reservation.domain.event.payload.CancelReason;
 import org.ticketing.reservation.application.dto.query.GetMyReservationsQuery;
 import org.ticketing.reservation.application.dto.query.GetReservationQuery;
 import org.ticketing.reservation.application.service.ReservationApplicationService;
@@ -68,7 +69,7 @@ public class ReservationController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void cancel(@PathVariable UUID reservationId) {
         String canceledBy = securityContextProvider.getCurrentUsername();
-        reservationApplicationService.cancel(new CancelReservationCommand(reservationId, canceledBy));
+        reservationApplicationService.cancel(new CancelReservationCommand(reservationId, canceledBy, CancelReason.USER_CANCEL));
     }
 
     // 좌석 단위 (HOLD/RESERVED) 는 ReservationSeatController(/api/reservation-seats) 에서 처리.

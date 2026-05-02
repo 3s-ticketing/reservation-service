@@ -13,6 +13,7 @@ import org.springframework.retry.annotation.Backoff;
 import org.springframework.stereotype.Component;
 import org.ticketing.reservation.application.dto.command.CancelReservationCommand;
 import org.ticketing.reservation.application.service.ReservationApplicationService;
+import org.ticketing.reservation.domain.event.payload.CancelReason;
 import org.ticketing.reservation.domain.exception.InvalidReservationStateException;
 import org.ticketing.reservation.domain.exception.ReservationNotFoundException;
 import org.ticketing.reservation.infrastructure.redis.MatchTicketWindowCache;
@@ -85,7 +86,7 @@ public class MatchCanceledEventConsumer {
         for (UUID reservationId : cancellableIds) {
             try {
                 reservationApplicationService.cancel(
-                        new CancelReservationCommand(reservationId, "match.canceled"));
+                        new CancelReservationCommand(reservationId, "match.canceled", CancelReason.MATCH_CANCELED));
                 successCount++;
 
             } catch (InvalidReservationStateException e) {

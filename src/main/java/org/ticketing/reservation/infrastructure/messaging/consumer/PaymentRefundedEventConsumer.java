@@ -12,6 +12,7 @@ import org.springframework.retry.annotation.Backoff;
 import org.springframework.stereotype.Component;
 import org.ticketing.reservation.application.dto.command.CancelReservationCommand;
 import org.ticketing.reservation.application.service.ReservationApplicationService;
+import org.ticketing.reservation.domain.event.payload.CancelReason;
 import org.ticketing.reservation.domain.exception.InvalidReservationStateException;
 import org.ticketing.reservation.domain.exception.ReservationNotFoundException;
 import org.ticketing.ticket.application.service.TicketService;
@@ -75,7 +76,7 @@ public class PaymentRefundedEventConsumer {
         // 1. 예매 취소 (DB CANCELLED 전이 + Redis 락 해제)
         try {
             reservationApplicationService.cancel(
-                    new CancelReservationCommand(reservationId, "payment.refunded"));
+                    new CancelReservationCommand(reservationId, "payment.refunded", CancelReason.USER_CANCEL));
             log.info("[payment.refunded] 예매 취소 완료 — reservationId={}", reservationId);
 
         } catch (InvalidReservationStateException e) {

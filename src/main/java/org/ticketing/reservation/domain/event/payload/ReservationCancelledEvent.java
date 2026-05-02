@@ -1,6 +1,5 @@
 package org.ticketing.reservation.domain.event.payload;
 
-import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
@@ -10,7 +9,6 @@ import java.util.UUID;
 public record ReservationCancelledEvent(
         UUID reservationId,
         UUID userId,
-        UUID matchId,
-        OffsetDateTime canceledAt
+        CancelReason cancelReason
 ) {
 }
