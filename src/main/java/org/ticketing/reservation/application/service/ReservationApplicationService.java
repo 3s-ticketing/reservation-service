@@ -15,6 +15,9 @@ import org.ticketing.reservation.application.dto.command.ReleaseSeatCommand;
 import org.ticketing.reservation.application.dto.query.GetMyReservationsQuery;
 import org.ticketing.reservation.application.dto.query.GetReservationQuery;
 import org.ticketing.reservation.application.dto.result.ReservationResult;
+import org.ticketing.reservation.domain.event.ReservationEventPublisher;
+import org.ticketing.reservation.domain.event.payload.CancelReason;
+import org.ticketing.reservation.domain.event.payload.ReservationCancelledEvent;
 import org.ticketing.reservation.domain.exception.InvalidReservationStateException;
 import org.ticketing.reservation.domain.exception.ReservationNotFoundException;
 import org.ticketing.reservation.domain.exception.SeatAlreadyHeldException;
@@ -36,6 +39,7 @@ public class ReservationApplicationService {
 
     private final ReservationRepository reservationRepository;
     private final SeatProvider seatProvider;
+    private final ReservationEventPublisher reservationEventPublisher;
 
     // ──────────────────────────────────────────
     // 커맨드 — 예매 라이프사이클
@@ -92,6 +96,15 @@ public class ReservationApplicationService {
         Reservation reservation = getActive(command.reservationId());
         reservation.cancel();
         reservation.delete(command.canceledBy());
+
+        // 이벤트 발행
+        reservationEventPublisher.publishCancelled(
+                new ReservationCancelledEvent(
+                        reservation.getId(),
+                        reservation.getUserId(),
+                        CancelReason.USER_CANCEL
+                )
+        );
     }
 
     /**
@@ -115,6 +128,16 @@ public class ReservationApplicationService {
     public ReservationResult expire(ExpireReservationCommand command) {
         Reservation reservation = getActive(command.reservationId());
         reservation.expire();
+
+        // 이벤트 발행
+        reservationEventPublisher.publishCancelled(
+                new ReservationCancelledEvent(
+                        reservation.getId(),
+                        reservation.getUserId(),
+                        CancelReason.EXPIRED
+                )
+        );
+
         return ReservationResult.from(reservation);
     }
 
