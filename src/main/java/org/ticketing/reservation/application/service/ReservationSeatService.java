@@ -132,6 +132,11 @@ public class ReservationSeatService {
                 .findFirst()
                 .orElse(newSeat);
 
+        try {
+            seatHoldRepository.release(matchId, command.seatId());
+        } catch (Exception e) {
+            log.warn("[Redis] 선점 해제 실패 - TTL 자연 만료 대기 matchId={}, seatId={}",
+                    matchId, command.seatId(), e);
         // HOLD → RESERVED 전이. ticketOpenAt 기반 TTL 적용.
         // (TTL 정책이 ticketOpenAt 미수신 시 fallback 사용)
         Duration reservedTtl = reservedTtlPolicy.ttlFor(matchId);
