@@ -10,9 +10,11 @@ spring:
       enabled: false
 
   datasource:
-    url: jdbc:postgresql://localhost:15432/ticketing
-    username: ticketing
-    password: change-me-local
+    # currentSchema=reservation: 엔티티에 schema 미명시이므로 JDBC search_path 로 강제.
+    # env 값 우선, 없으면 .env 와 동일한 로컬 기본값으로 fallback.
+    url: jdbc:postgresql://localhost:${POSTGRES_PORT:15432}/${POSTGRES_DB:ticketing}?currentSchema=reservation
+    username: ${POSTGRES_USER:ticketing}
+    password: ${POSTGRES_PASSWORD:ticketing1234}
     driver-class-name: org.postgresql.Driver
 
   jpa:
