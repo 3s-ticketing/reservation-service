@@ -15,13 +15,11 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.ticketing.common.util.SecurityUtil;
 import org.ticketing.reservation.application.dto.command.CancelReservationCommand;
-import org.ticketing.reservation.application.dto.command.ReleaseSeatCommand;
 import org.ticketing.reservation.application.dto.query.GetMyReservationsQuery;
 import org.ticketing.reservation.application.dto.query.GetReservationQuery;
 import org.ticketing.reservation.application.service.ReservationApplicationService;
 import org.ticketing.reservation.infrastructure.security.SecurityContextProvider;
 import org.ticketing.reservation.presentation.dto.request.CreateReservationRequestDto;
-import org.ticketing.reservation.presentation.dto.request.HoldSeatRequestDto;
 import org.ticketing.reservation.presentation.dto.response.ReservationResponseDto;
 
 @RestController
@@ -73,26 +71,8 @@ public class ReservationController {
         reservationApplicationService.cancel(new CancelReservationCommand(reservationId, canceledBy));
     }
 
-    // ──────────────────────────────────────────
-    // 좌석 단위 (루트 경유)
-    // ──────────────────────────────────────────
-
-    /** POST /api/reservations/{reservationId}/seats — 좌석 한 건 추가 (HOLD) */
-    @PostMapping("/{reservationId}/seats")
-    @ResponseStatus(HttpStatus.CREATED)
-    public ReservationResponseDto holdSeat(@PathVariable UUID reservationId,
-                                           @RequestBody @Valid HoldSeatRequestDto request) {
-        return ReservationResponseDto.from(
-                reservationApplicationService.holdSeat(request.toCommand(reservationId))
-        );
-    }
-
-    /** DELETE /api/reservations/{reservationId}/seats/{seatId} — 좌석 한 건만 해제 */
-    @DeleteMapping("/{reservationId}/seats/{seatId}")
-    public ReservationResponseDto releaseSeat(@PathVariable UUID reservationId,
-                                              @PathVariable UUID seatId) {
-        return ReservationResponseDto.from(
-                reservationApplicationService.releaseSeat(new ReleaseSeatCommand(reservationId, seatId))
-        );
-    }
+    // 좌석 단위 (HOLD/RESERVED) 는 ReservationSeatController(/api/reservation-seats) 에서 처리.
+    // — POST /api/reservation-seats/hold     : Redis HOLD
+    // — POST /api/reservation-seats/confirm  : Redis HOLD→RESERVED + DB INSERT
+    // — DELETE /api/reservation-seats/{id}   : 단일 좌석 취소 (DB CANCELED + Redis release)
 }

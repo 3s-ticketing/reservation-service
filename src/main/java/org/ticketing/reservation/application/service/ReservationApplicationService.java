@@ -3,170 +3,112 @@ package org.ticketing.reservation.application.service;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.ticketing.reservation.application.dto.command.CancelReservationCommand;
 import org.ticketing.reservation.application.dto.command.ConfirmReservationCommand;
 import org.ticketing.reservation.application.dto.command.CreateReservationCommand;
 import org.ticketing.reservation.application.dto.command.ExpireReservationCommand;
-import org.ticketing.reservation.application.dto.command.HoldSeatCommand;
-import org.ticketing.reservation.application.dto.command.ReleaseSeatCommand;
 import org.ticketing.reservation.application.dto.query.GetMyReservationsQuery;
 import org.ticketing.reservation.application.dto.query.GetReservationQuery;
 import org.ticketing.reservation.application.dto.result.ReservationResult;
-import org.ticketing.reservation.domain.exception.InvalidReservationStateException;
 import org.ticketing.reservation.domain.exception.ReservationNotFoundException;
-import org.ticketing.reservation.domain.exception.SeatAlreadyHeldException;
 import org.ticketing.reservation.domain.model.Reservation;
+import org.ticketing.reservation.domain.model.ReservationSeat;
 import org.ticketing.reservation.domain.repository.ReservationRepository;
-import org.ticketing.reservation.domain.service.SeatProvider;
-import org.ticketing.reservation.domain.service.SeatProvider.SeatSnapshot;
+import org.ticketing.reservation.domain.service.SeatHoldRepository;
 
 /**
- * 예매 어그리게이트(루트 {@code Reservation} + 자식 좌석)에 대한 애플리케이션 서비스.
+ * 예매 어그리게이트 오케스트레이션 서비스.
  *
- * <p>좌석은 항상 루트를 통해서만 추가/해제된다. 외부 좌석 메타 조회는
- * {@link SeatProvider} 를 거쳐 도메인 스냅샷을 받아온다.
+ * <h3>역할 경계</h3>
+ * <p>본 서비스는 예매(루트)의 라이프사이클(생성·확정·취소·만료)만 다룬다.
+ * 좌석 점유는 Redis 가 단일 진실(single source of truth)이며,
+ * 좌석 단위 hold/confirm/cancel 은 {@code ReservationSeatService} 가 담당한다.
+ *
+ * <h3>cancel/expire 시 Redis 정리</h3>
+ * <p>{@code cancel} / {@code expire} 는 다음 순서로 동작한다:
+ * <ol>
+ *   <li>read tx 로 활성 좌석을 캡처</li>
+ *   <li>{@link ReservationWriteService} 가 write tx 로 DB 변경 + 커밋</li>
+ *   <li>커밋 후 Redis 락을 일괄 해제 — 다른 사용자가 좌석을 다시 점유 가능하도록</li>
+ * </ol>
+ * DB 가 롤백되어도 Redis 가 먼저 풀리는 일이 없도록 항상 DB 커밋 후에 Redis 를 정리한다.
  */
+@Slf4j
 @Service
-@Transactional(readOnly = true)
 @RequiredArgsConstructor
 public class ReservationApplicationService {
 
     private final ReservationRepository reservationRepository;
-    private final SeatProvider seatProvider;
+    private final ReservationWriteService reservationWriteService;
+    private final SeatHoldRepository seatHoldRepository;
 
     // ──────────────────────────────────────────
     // 커맨드 — 예매 라이프사이클
     // ──────────────────────────────────────────
 
     /**
-     * 예매 생성.
+     * 예매 생성 — 빈 PENDING 예매만 만든다.
      *
-     * <p>요청된 좌석 ID 들을 외부 좌석 도메인에서 검증·스냅샷화한 뒤,
-     * PENDING 예매와 함께 HOLD 좌석을 한 트랜잭션에서 생성한다.
-     * {@code totalPrice} 는 좌석 가격 합계로 도메인이 직접 계산한다.
-     *
-     * <p>동일 경기·좌석에 활성 점유가 이미 존재하면 DB 유니크 인덱스
-     * {@code uq_reservation_seat_active} 위반으로 {@link SeatAlreadyHeldException} 으로 변환된다.
+     * <p>좌석 추가는 후속 호출 ({@code POST /api/reservation-seats/hold})로 진행된다.
+     * 점유 여부는 Redis 가 단일 진실로 관리하므로 본 메서드는 외부 좌석 도메인을 호출하지 않는다.
      */
-    @Transactional
     public ReservationResult create(CreateReservationCommand command) {
-        if (command.seatIds() == null || command.seatIds().isEmpty()) {
-            throw new InvalidReservationStateException("좌석은 최소 한 좌석 이상 선택해야 합니다.");
-        }
-
-        // 1. 외부 좌석 도메인 검증 + 스냅샷 수집
-        for (UUID seatId : command.seatIds()) {
-            if (!seatProvider.existsAndUsable(command.matchId(), seatId)) {
-                throw new InvalidReservationStateException(
-                        "사용할 수 없는 좌석입니다. seatId=" + seatId);
-            }
-        }
-
-        // 2. PENDING 예매 + HOLD 좌석 동시 생성
-        Reservation reservation = Reservation.create(command.userId(), command.matchId(), 0L);
-        for (UUID seatId : command.seatIds()) {
-            SeatSnapshot snapshot = seatProvider.fetchSnapshot(command.matchId(), seatId);
-            reservation.addSeat(snapshot);
-        }
-        reservation.recalculateTotalPrice();
-
-        // 3. 저장 — 자식 좌석은 cascade 로 함께 영속화된다.
-        try {
-            return ReservationResult.from(reservationRepository.save(reservation));
-        } catch (DataIntegrityViolationException e) {
-            throw new SeatAlreadyHeldException();
-        }
+        return reservationWriteService.create(command);
     }
 
     /**
      * 예매 취소 — 사용자 요청.
      *
-     * <p>루트 상태를 CANCELLED 로 전이하면 활성 좌석들도 함께 CANCELED 로 전이된다.
-     * 마지막에 소프트 딜리트로 마무리한다.
+     * <ol>
+     *   <li>활성 좌석 ID 캡처 (read tx)</li>
+     *   <li>DB 취소 (write tx 커밋)</li>
+     *   <li>Redis 락 해제 (커밋 후) — 다른 사용자가 좌석을 다시 점유 가능하도록</li>
+     * </ol>
+     *
+     * <p>DB 커밋 후 Redis 를 정리하므로 DB 가 롤백되어도 Redis 가 먼저 풀리는 일은 없다.
+     * Redis 정리 자체가 실패하면 경고 로그만 남기고 진행 — TTL 자연 만료까지 락이 유지됨.
+     * (보상 메커니즘은 추후 reconciliation 잡으로 도입 예정)
      */
-    @Transactional
     public void cancel(CancelReservationCommand command) {
-        Reservation reservation = getActive(command.reservationId());
-        reservation.cancel();
-        reservation.delete(command.canceledBy());
+        SeatCleanupTarget target = collectActiveSeats(command.reservationId());
+        reservationWriteService.cancel(command);
+        releaseSeatsAfterCommit(target);
     }
 
     /**
      * 예매 확정 — 결제 완료 이벤트 수신 시 내부 호출.
-     *
-     * <p>루트가 COMPLETED 로 전이되며, HOLD 좌석들이 RESERVED 로 함께 전이된다.
      */
-    @Transactional
     public ReservationResult confirm(ConfirmReservationCommand command) {
-        Reservation reservation = getActive(command.reservationId());
-        reservation.complete();
-        return ReservationResult.from(reservation);
+        return reservationWriteService.confirm(command);
     }
 
     /**
      * 예매 만료 — TTL 만료 이벤트 수신 시 내부 호출.
      *
-     * <p>루트가 EXPIRED 로 전이되며, HOLD 좌석들이 EXPIRED 로 함께 전이된다.
+     * <p>cancel 과 동일하게 활성 좌석을 캡처한 뒤 DB 만료 → Redis 정리 순으로 진행.
      */
-    @Transactional
     public ReservationResult expire(ExpireReservationCommand command) {
-        Reservation reservation = getActive(command.reservationId());
-        reservation.expire();
-        return ReservationResult.from(reservation);
-    }
-
-    // ──────────────────────────────────────────
-    // 커맨드 — 좌석 단위 (루트 경유)
-    // ──────────────────────────────────────────
-
-    /**
-     * 기존 PENDING 예매에 좌석을 한 건 추가한다.
-     */
-    @Transactional
-    public ReservationResult holdSeat(HoldSeatCommand command) {
-        Reservation reservation = getActive(command.reservationId());
-
-        if (!seatProvider.existsAndUsable(reservation.getMatchId(), command.seatId())) {
-            throw new InvalidReservationStateException(
-                    "사용할 수 없는 좌석입니다. seatId=" + command.seatId());
-        }
-
-        SeatSnapshot snapshot = seatProvider.fetchSnapshot(
-                reservation.getMatchId(), command.seatId());
-        reservation.addSeat(snapshot);
-        reservation.recalculateTotalPrice();
-
-        try {
-            return ReservationResult.from(reservationRepository.save(reservation));
-        } catch (DataIntegrityViolationException e) {
-            throw new SeatAlreadyHeldException(reservation.getMatchId(), command.seatId());
-        }
-    }
-
-    /**
-     * PENDING 예매에서 좌석 한 건만 사용자 취소.
-     *
-     * <p>예매 자체는 그대로 두고, 자식 좌석 한 건만 CANCELED 로 전이한다.
-     */
-    @Transactional
-    public ReservationResult releaseSeat(ReleaseSeatCommand command) {
-        Reservation reservation = getActive(command.reservationId());
-        reservation.releaseSeat(command.seatId());
-        reservation.recalculateTotalPrice();
-        return ReservationResult.from(reservationRepository.save(reservation));
+        SeatCleanupTarget target = collectActiveSeats(command.reservationId());
+        ReservationResult result = reservationWriteService.expire(command);
+        releaseSeatsAfterCommit(target);
+        return result;
     }
 
     // ──────────────────────────────────────────
     // 쿼리
     // ──────────────────────────────────────────
 
+    @Transactional(readOnly = true)
     public ReservationResult findById(GetReservationQuery query) {
-        return ReservationResult.from(getActive(query.reservationId()));
+        Reservation reservation = reservationRepository.findActiveById(query.reservationId())
+                .orElseThrow(() -> new ReservationNotFoundException(query.reservationId()));
+        return ReservationResult.from(reservation);
     }
 
+    @Transactional(readOnly = true)
     public List<ReservationResult> findMyReservations(GetMyReservationsQuery query) {
         return reservationRepository.findAllByUserId(query.userId())
                 .stream()
@@ -175,11 +117,40 @@ public class ReservationApplicationService {
     }
 
     // ──────────────────────────────────────────
-    // 내부 헬퍼
+    // Redis 정리 헬퍼
     // ──────────────────────────────────────────
 
-    private Reservation getActive(UUID reservationId) {
-        return reservationRepository.findActiveById(reservationId)
+    /**
+     * cancel/expire 직전 활성 좌석을 캡처한다 (read tx 한 건).
+     * 이 단계에서 잡힌 좌석들이 후속 Redis release 의 대상이 된다.
+     */
+    @Transactional(readOnly = true)
+    protected SeatCleanupTarget collectActiveSeats(UUID reservationId) {
+        Reservation reservation = reservationRepository.findActiveById(reservationId)
                 .orElseThrow(() -> new ReservationNotFoundException(reservationId));
+        List<UUID> seatIds = reservation.getSeats().stream()
+                .filter(s -> s.getSeatStatus().isActive())
+                .map(ReservationSeat::getSeatId)
+                .toList();
+        return new SeatCleanupTarget(reservation.getMatchId(), seatIds);
     }
+
+    /**
+     * 캡처해둔 좌석에 대해 Redis 락을 일괄 해제한다.
+     * 호출 시점은 DB write tx 가 이미 커밋된 직후라야 한다.
+     * 개별 release 실패는 로그만 남기고 다음 좌석으로 진행.
+     */
+    private void releaseSeatsAfterCommit(SeatCleanupTarget target) {
+        target.seatIds().forEach(seatId -> {
+            try {
+                seatHoldRepository.release(target.matchId(), seatId);
+            } catch (Exception e) {
+                log.warn("[Redis] 좌석 락 해제 실패 — 자연 만료 대기. matchId={}, seatId={}",
+                        target.matchId(), seatId, e);
+            }
+        });
+    }
+
+    /** cancel/expire 후 Redis 정리 대상. */
+    private record SeatCleanupTarget(UUID matchId, List<UUID> seatIds) {}
 }

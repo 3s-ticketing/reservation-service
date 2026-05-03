@@ -1,5 +1,6 @@
 package org.ticketing.reservation.application.service;
 
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -7,6 +8,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.ticketing.reservation.application.dto.command.CancelReservationSeatCommand;
 import org.ticketing.reservation.application.dto.command.ConfirmReservationSeatCommand;
 import org.ticketing.reservation.application.dto.command.HoldReservationSeatCommand;
@@ -26,6 +29,7 @@ import org.ticketing.reservation.domain.repository.ReservationRepository;
 import org.ticketing.reservation.domain.repository.ReservationSeatRepository;
 import org.ticketing.reservation.domain.service.SeatHoldRepository;
 import org.ticketing.reservation.domain.service.SeatProvider;
+import org.ticketing.reservation.infrastructure.redis.SeatReservedTtlPolicy;
 import org.ticketing.common.exception.BadRequestException;
 import org.ticketing.common.exception.ConflictException;
 import org.ticketing.common.exception.ForbiddenException;
@@ -41,6 +45,7 @@ public class ReservationSeatService {
     private final ReservationRepository reservationRepository;
     private final ReservationSeatRepository reservationSeatRepository;
     private final SeatHoldRepository seatHoldRepository;
+    private final SeatReservedTtlPolicy reservedTtlPolicy;
     private final SeatProvider seatProvider;
     private final ReservationSeatEventPublisher eventPublisher;
 
@@ -52,6 +57,16 @@ public class ReservationSeatService {
 
         UUID matchId = reservation.getMatchId();
 
+        // ✅ DB RESERVED + Redis HOLD 합산하여 4매 제한 검증
+        long reservedCount = reservation.getSeats().stream()
+                .filter(seat -> seat.getSeatStatus().isActive())
+                .count();
+        int holdCount = seatHoldRepository.countHoldsByReservationId(command.reservationId());
+
+        if (reservedCount + holdCount >= MAX_SEAT_PER_RESERVATION) {
+            throw new BadRequestException("예약 가능한 최대 좌석 수를 초과하였습니다.");
+        }
+
         if (!seatProvider.existsAndUsable(matchId, command.seatId())) {
             throw new BadRequestException("유효하지 않은 좌석입니다.");
         }
@@ -61,7 +76,7 @@ public class ReservationSeatService {
                     throw new SeatAlreadyHeldException(matchId, command.seatId());
                 });
 
-        SeatHold seatHold = new SeatHold(
+        SeatHold seatHold = SeatHold.hold(
                 command.reservationId(),
                 command.userId(),
                 matchId,
@@ -109,6 +124,7 @@ public class ReservationSeatService {
         SeatProvider.SeatSnapshot snapshot = seatProvider.fetchSnapshot(matchId, command.seatId());
 
         ReservationSeat newSeat = reservation.addSeat(snapshot);
+        reservation.recalculateTotalPrice();
         Reservation saved = reservationRepository.saveAndFlush(reservation);
 
         ReservationSeat savedSeat = saved.getSeats().stream()
@@ -116,11 +132,24 @@ public class ReservationSeatService {
                 .findFirst()
                 .orElse(newSeat);
 
-        try {
-            seatHoldRepository.release(matchId, command.seatId());
-        } catch (Exception e) {
-            log.warn("[Redis] 선점 해제 실패 - TTL 자연 만료 대기 matchId={}, seatId={}",
-                    matchId, command.seatId(), e);
+        // HOLD → RESERVED 전이. ticketOpenAt 기반 TTL 적용.
+        // (TTL 정책이 ticketOpenAt 미수신 시 fallback 사용)
+        Duration reservedTtl = reservedTtlPolicy.ttlFor(matchId);
+        SeatHold reservedPayload = SeatHold.reserved(
+                command.reservationId(),
+                command.userId(),
+                matchId,
+                command.seatId(),
+                OffsetDateTime.now().plus(reservedTtl)
+        );
+        boolean confirmed = seatHoldRepository.confirm(
+                matchId, command.seatId(), reservedPayload, reservedTtl);
+        if (!confirmed) {
+            // HOLD 가 만료됐거나 다른 owner — DB 는 이미 RESERVED 로 INSERT 됐으므로
+            // 보상 로직은 추후(스케줄러/이벤트) 처리. 지금은 경고 로그만.
+            log.warn("[Redis] HOLD→RESERVED 전이 실패 — DB 영속화는 완료됨. "
+                    + "matchId={}, seatId={}, reservationId={}",
+                    matchId, command.seatId(), command.reservationId());
         }
 
         eventPublisher.publishReserved(new ReservationSeatReservedEvent(
@@ -141,10 +170,15 @@ public class ReservationSeatService {
                 .orElseThrow(() -> new ReservationSeatNotFoundException(command.reservationSeatId()));
 
         Reservation reservation = seat.getReservation();
+        UUID matchId = reservation.getMatchId();    // afterCommit 훅에서 사용
+        UUID seatId = seat.getSeatId();
 
         ReservationSeat canceled = reservation.releaseSeat(command.reservationSeatId());
         reservation.recalculateTotalPrice();
         reservationRepository.save(reservation);
+
+        // DB tx 커밋 후 Redis 락 해제 — 롤백 시 Redis 가 먼저 풀리는 일을 막는다.
+        registerRedisReleaseAfterCommit(matchId, seatId);
 
         eventPublisher.publishReleased(new ReservationSeatReleasedEvent(
                 canceled.getId(),
@@ -156,6 +190,35 @@ public class ReservationSeatService {
         ));
 
         return ReservationSeatResult.from(canceled);
+    }
+
+    /**
+     * Redis 좌석 락 해제를 현재 트랜잭션의 afterCommit 페이즈에 예약한다.
+     *
+     * <p>트랜잭션 컨텍스트 밖에서 호출되면 즉시 실행한다(보호적 fallback).
+     * release 실패는 로그만 남기고 무시 — TTL 자연 만료 또는 reconciliation 잡으로 보완.
+     */
+    private void registerRedisReleaseAfterCommit(UUID matchId, UUID seatId) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    try {
+                        seatHoldRepository.release(matchId, seatId);
+                    } catch (Exception e) {
+                        log.warn("[Redis] afterCommit 락 해제 실패 — 자연 만료 대기. "
+                                + "matchId={}, seatId={}", matchId, seatId, e);
+                    }
+                }
+            });
+        } else {
+            try {
+                seatHoldRepository.release(matchId, seatId);
+            } catch (Exception e) {
+                log.warn("[Redis] 락 해제 실패 — 자연 만료 대기. matchId={}, seatId={}",
+                        matchId, seatId, e);
+            }
+        }
     }
 
     @Transactional
