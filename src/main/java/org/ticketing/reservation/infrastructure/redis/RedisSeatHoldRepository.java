@@ -62,12 +62,18 @@ public class RedisSeatHoldRepository implements SeatHoldRepository {
      *
      * <p>KEYS[1] = seat:{matchId}:{seatId}
      * <p>KEYS[2] = holds:{reservationId}
+     * <p>KEYS[3] = hold_expiry_index (Sorted Set)
      * <p>ARGV[1] = 기대 reservationId (소유자 검증)
      * <p>ARGV[2] = 새 RESERVED 페이로드(JSON)
      * <p>ARGV[3] = 새 TTL(초)
+     * <p>ARGV[4] = hold_expiry_index 에서 제거할 멤버 문자열 ("{matchId}:{seatId}")
      *
      * <p>HOLD 또는 EXPIRE_PENDING 상태에서 RESERVED 전이를 허용한다.
      * EXPIRE_PENDING 상태에서 결제 완료 이벤트가 뒤늦게 도착하는 경우를 처리한다.
+     *
+     * <p>SET + SREM(holds) + ZREM(hold_expiry_index) 를 단일 원자 연산으로 수행한다.
+     * 스크립트 성공 후 별도 ZREM 호출을 분리하면 중간 장애 시 stale 인덱스가 영구 잔류하므로
+     * 반드시 스크립트 안에서 처리한다.
      *
      * <p>반환: 1 = 성공, 0 = 실패(키 없음 / state 불일치 / owner 불일치).
      */
@@ -79,6 +85,7 @@ public class RedisSeatHoldRepository implements SeatHoldRepository {
             + "    and obj.reservationId == ARGV[1] then "
             + "  redis.call('SET', KEYS[1], ARGV[2], 'EX', tonumber(ARGV[3])) "
             + "  redis.call('SREM', KEYS[2], obj.seatId) "
+            + "  redis.call('ZREM', KEYS[3], ARGV[4]) "
             + "  return 1 "
             + "else "
             + "  return 0 "
@@ -174,18 +181,17 @@ public class RedisSeatHoldRepository implements SeatHoldRepository {
             String json = objectMapper.writeValueAsString(reservedValue);
             Long result = redisTemplate.execute(
                     CONFIRM_SCRIPT,
-                    List.of(seatKey(matchId, seatId), holdSetKey(reservedValue.reservationId())),
+                    List.of(
+                            seatKey(matchId, seatId),
+                            holdSetKey(reservedValue.reservationId()),
+                            HOLD_EXPIRY_INDEX_KEY          // KEYS[3]
+                    ),
                     reservedValue.reservationId().toString(),
                     json,
-                    String.valueOf(ttl.getSeconds())
+                    String.valueOf(ttl.getSeconds()),
+                    expiryMember(matchId, seatId)          // ARGV[4]
             );
-            if (result != null && result == 1L) {
-                // hold_expiry_index 에서도 제거 (EXPIRE_PENDING 전이 전에 결제 완료된 경우)
-                redisTemplate.opsForZSet().remove(
-                        HOLD_EXPIRY_INDEX_KEY, expiryMember(matchId, seatId));
-                return true;
-            }
-            return false;
+            return result != null && result == 1L;
         } catch (Exception e) {
             log.error("[Redis] 좌석 confirm(HOLD|EXPIRE_PENDING→RESERVED) 실패 - matchId={}, seatId={}",
                     matchId, seatId, e);
