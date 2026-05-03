@@ -33,9 +33,9 @@ spring:
 
   # 3. Kafka 비활성화 (필요 시 주석 해제하여 사용)
   # 지금은 Kafka 컨테이너를 안 띄우므로 설정이 있으면 에러가 날 수 있음
-#  kafka:
-#    enabled: false
-#    bootstrap-servers: localhost:19092 # 외부 포트 기준
+  kafka:
+    enabled: false
+    bootstrap-servers: localhost:19092 # 외부 포트 기준
 
 # 4. Eureka 비활성화 유지
 eureka:

@@ -1,10 +1,8 @@
 package org.ticketing.reservation.infrastructure.event;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
+import org.ticketing.common.event.Events;
 import org.ticketing.reservation.domain.event.ReservationEventPublisher;
 import org.ticketing.reservation.domain.event.payload.ReservationCancelledEvent;
 import org.ticketing.reservation.domain.event.payload.ReservationCompletedEvent;
@@ -16,26 +14,22 @@ import org.ticketing.reservation.domain.event.payload.ReservationSeatReservedEve
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class ReservationEventPublisherImpl implements ReservationEventPublisher {
 
-    private final KafkaTemplate<String, Object> kafkaTemplate;
-
-    @Value("${topics.reservation.cancelled:reservation.cancelled}")
-    private String reservationCancelledTopic;
+    private static final String DOMAIN_TYPE = "RESERVATION";
+    private static final String TOPIC_RESERVATION_CANCELLED = "reservation.cancelled";
 
     @Override
     public void publishCancelled(ReservationCancelledEvent event) {
-        kafkaTemplate.send(reservationCancelledTopic, event.reservationId().toString(), event)
-                .whenComplete((result, ex) -> {
-                    if (ex != null) {
-                        log.error("[ReservationCancelledEvent] 발행 실패 - reservationId: {}, reason: {}",
-                                event.reservationId(), event.cancelReason(), ex);
-                    } else {
-                        log.info("[ReservationCancelledEvent] 발행 성공 - reservationId: {}, reason: {}",
-                                event.reservationId(), event.cancelReason());
-                    }
-                });
+        Events.trigger(
+                "reservation-cancelled-" + event.reservationId(),  // correlationId (멱등성 보장)
+                DOMAIN_TYPE,
+                event.reservationId().toString(),                   // domainId (Kafka 파티션 키)
+                TOPIC_RESERVATION_CANCELLED,                        // eventType = topic
+                event                                               // payload
+        );
+        log.info("[ReservationCancelledEvent] Outbox 등록 - reservationId: {}, reason: {}",
+                event.reservationId(), event.cancelReason());
     }
 
     @Override
