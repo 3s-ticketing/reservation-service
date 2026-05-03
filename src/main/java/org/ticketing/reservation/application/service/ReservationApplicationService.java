@@ -1,7 +1,10 @@
 package org.ticketing.reservation.application.service;
 
+import java.time.Duration;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,8 +21,10 @@ import org.ticketing.reservation.domain.exception.ReservationNotFoundException;
 import org.ticketing.reservation.domain.model.Reservation;
 import org.ticketing.reservation.domain.model.ReservationSeat;
 import org.ticketing.reservation.domain.model.ReservationStatus;
+import org.ticketing.reservation.domain.model.redis.SeatHold;
 import org.ticketing.reservation.domain.repository.ReservationRepository;
 import org.ticketing.reservation.domain.service.SeatHoldRepository;
+import org.ticketing.reservation.infrastructure.redis.SeatReservedTtlPolicy;
 
 /**
  * 예매 어그리게이트 오케스트레이션 서비스.
@@ -46,6 +51,7 @@ public class ReservationApplicationService {
     private final ReservationRepository reservationRepository;
     private final ReservationWriteService reservationWriteService;
     private final SeatHoldRepository seatHoldRepository;
+    private final SeatReservedTtlPolicy reservedTtlPolicy;
 
     // ──────────────────────────────────────────
     // 커맨드 — 예매 라이프사이클
@@ -82,9 +88,20 @@ public class ReservationApplicationService {
 
     /**
      * 예매 확정 — 결제 완료 이벤트 수신 시 내부 호출.
+     *
+     * <p>DB 상태를 COMPLETED 로 전이한 뒤, Redis 좌석이 아직 HOLD/EXPIRE_PENDING 상태인 경우
+     * RESERVED 로 전이한다.
+     *
+     * <p>정상 흐름({@code confirmReservationSeat} 이미 호출됨)에서는 Redis 가 이미 RESERVED 이므로
+     * skip 된다. 예외 케이스 — {@code confirmReservationSeat} 의 Redis confirm 이 실패한 뒤
+     * HoldExpiryScheduler 가 EXPIRE_PENDING 으로 전이한 상황 — 에서도 결제 완료 시점에
+     * RESERVED 전이를 보장한다.
      */
     public ReservationResult confirm(ConfirmReservationCommand command) {
-        return reservationWriteService.confirm(command);
+        SeatCleanupTarget target = collectActiveSeats(command.reservationId());
+        ReservationResult result = reservationWriteService.confirm(command);
+        confirmSeatsAfterCommit(target);
+        return result;
     }
 
     /**
@@ -154,6 +171,39 @@ public class ReservationApplicationService {
                 .map(ReservationSeat::getSeatId)
                 .toList();
         return new SeatCleanupTarget(reservation.getMatchId(), seatIds);
+    }
+
+    /**
+     * 캡처해둔 좌석에 대해 Redis 락을 RESERVED 로 전이한다.
+     *
+     * <p>호출 시점은 DB write tx 가 이미 커밋된 직후라야 한다.
+     * 이미 RESERVED 이거나 키가 없으면(자연 만료) skip.
+     * 개별 실패는 로그만 남기고 다음 좌석으로 진행.
+     */
+    private void confirmSeatsAfterCommit(SeatCleanupTarget target) {
+        Duration ttl = reservedTtlPolicy.ttlFor(target.matchId());
+        target.seatIds().forEach(seatId -> {
+            try {
+                Optional<SeatHold> holdOpt = seatHoldRepository.find(target.matchId(), seatId);
+                if (holdOpt.isEmpty() || holdOpt.get().isReserved()) {
+                    return; // 키 없거나 이미 RESERVED — confirmReservationSeat 에서 처리됨
+                }
+                SeatHold hold = holdOpt.get();
+                SeatHold reservedPayload = SeatHold.reserved(
+                        hold.reservationId(), hold.userId(),
+                        target.matchId(), seatId,
+                        OffsetDateTime.now().plus(ttl)
+                );
+                boolean ok = seatHoldRepository.confirm(target.matchId(), seatId, reservedPayload, ttl);
+                if (!ok) {
+                    log.warn("[Redis] 예매 확정 HOLD→RESERVED 전이 실패 — "
+                            + "matchId={}, seatId={}", target.matchId(), seatId);
+                }
+            } catch (Exception e) {
+                log.warn("[Redis] 예매 확정 좌석 처리 실패 — 자연 만료 대기. matchId={}, seatId={}",
+                        target.matchId(), seatId, e);
+            }
+        });
     }
 
     /**
