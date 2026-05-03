@@ -10,9 +10,11 @@ spring:
       enabled: false
 
   datasource:
-    url: jdbc:postgresql://localhost:15432/ticketing
-    username: ticketing
-    password: change-me-local
+    # currentSchema=reservation: 엔티티에 schema 미명시이므로 JDBC search_path 로 강제.
+    # env 값 우선, 없으면 .env 와 동일한 로컬 기본값으로 fallback.
+    url: jdbc:postgresql://localhost:${POSTGRES_PORT:15432}/${POSTGRES_DB:ticketing}?currentSchema=reservation
+    username: ${POSTGRES_USER:ticketing}
+    password: ${POSTGRES_PASSWORD:ticketing1234}
     driver-class-name: org.postgresql.Driver
 
   jpa:
@@ -31,27 +33,43 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: true # 기존 DB가 있을 경우 대비
 
-  # 3. Kafka 비활성화 (필요 시 주석 해제하여 사용)
-  # 지금은 Kafka 컨테이너를 안 띄우므로 설정이 있으면 에러가 날 수 있음
-#  kafka:
-#    enabled: false
-#    bootstrap-servers: localhost:19092 # 외부 포트 기준
+  kafka:
+    bootstrap-servers: localhost:19092
+    consumer:
+      group-id: ${spring.application.name}
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 
 # 4. Eureka 비활성화 유지
 eureka:
   client:
     enabled: false
 
-# 커스텀 토픽 이름 (재정의 가능)
-#topics:
-#  match:
-#    canceled: match.canceled
-#  reservation:
-#    confirmed: reservation.confirmed
-#    canceled: reservation.canceled
+# 토픽 이름
+topics:
+  payment:
+    completed: payment.completed
+    failed: payment.failed
+    refunded: payment.refunded
+  match:
+    canceled: match.canceled
+  reservation:
+    canceled: reservation.canceled
+    confirmation:
+      failed: reservation.confirmation.failed
 
-# 좌석 TTL 만료 스케줄러
-# REDIS 사용으로 불필요할 것 같아 주석처리
-#scheduler:
-#  held-seat-expiry:
-#    delay-ms: 30000
+kafka:
+  topic:
+    partitions: 3
+    replicas: 1
+
+# 좌석 HOLD 만료 스케줄러 (HOLD → EXPIRE_PENDING 전이)
+# 결제 윈도우(10분) 경과 여부를 30초마다 점검한다.
+# Feign 미구현 구간에서는 UNKNOWN 반환 → TTL 자연 만료(1분 유예)에 위임.
+scheduler:
+  hold-expiry:
+    delay-ms: 30000
