@@ -239,37 +239,68 @@ public class ReservationApplicationService {
                 .filter(s -> s.getSeatStatus().isActive())
                 .map(ReservationSeat::getSeatId)
                 .toList();
-        return new SeatCleanupTarget(reservation.getMatchId(), seatIds);
+        return new SeatCleanupTarget(
+                reservation.getMatchId(),
+                reservation.getId(),
+                reservation.getUserId(),
+                seatIds);
     }
 
     /**
-     * 캡처해둔 좌석에 대해 Redis 락을 RESERVED 로 전이한다.
+     * 캡처해둔 좌석에 대해 Redis 락을 RESERVED 로 전이/생성한다.
      *
      * <p>호출 시점은 DB write tx 가 이미 커밋된 직후라야 한다.
-     * 이미 RESERVED 이거나 키가 없으면(자연 만료) skip.
-     * 개별 실패는 로그만 남기고 다음 좌석으로 진행.
+     *
+     * <p>분기:
+     * <ul>
+     *   <li>이미 RESERVED → skip (정상 흐름에서 {@code confirmReservationSeat} 가 처리)</li>
+     *   <li>HOLD / EXPIRE_PENDING 존재 → {@link SeatHoldRepository#confirm} 으로 atomic 전이</li>
+     *   <li>키 없음 → {@link SeatHoldRepository#upsertReserved} 로 RESERVED 페이로드 새로 SET</li>
+     * </ul>
+     *
+     * <p>키가 없는 케이스는 HOLD/EXPIRE_PENDING TTL 자연 만료 뒤 결제완료가 늦게 도착한 경우에
+     * 발생한다. 이때 skip 하면 다른 사용자가 같은 좌석을 hold 할 수 있으므로 RESERVED 키를
+     * 새로 생성해야 한다 — Redis 가 좌석 점유의 단일 진실이라는 계약을 유지하기 위함.
+     *
+     * <p>개별 실패는 로그만 남기고 다음 좌석으로 진행.
      */
     private void confirmSeatsAfterCommit(SeatCleanupTarget target) {
         Duration ttl = reservedTtlPolicy.ttlFor(target.matchId());
         target.seatIds().forEach(seatId -> {
             try {
                 Optional<SeatHold> holdOpt = seatHoldRepository.find(target.matchId(), seatId);
-                if (holdOpt.isEmpty() || holdOpt.get().isReserved()) {
-                    return; // 키 없거나 이미 RESERVED — confirmReservationSeat 에서 처리됨
+
+                // 이미 RESERVED — confirmReservationSeat 에서 처리됨
+                if (holdOpt.isPresent() && holdOpt.get().isReserved()) {
+                    return;
                 }
-                SeatHold hold = holdOpt.get();
+
                 SeatHold reservedPayload = SeatHold.reserved(
-                        hold.reservationId(), hold.userId(),
+                        target.reservationId(),
+                        target.userId(),
                         target.matchId(), seatId,
                         OffsetDateTime.now().plus(ttl)
                 );
-                boolean ok = seatHoldRepository.confirm(target.matchId(), seatId, reservedPayload, ttl);
-                if (!ok) {
-                    log.warn("[Redis] 예매 확정 HOLD→RESERVED 전이 실패 — "
-                            + "matchId={}, seatId={}", target.matchId(), seatId);
+
+                if (holdOpt.isPresent()) {
+                    // HOLD 또는 EXPIRE_PENDING → atomic 전이
+                    boolean ok = seatHoldRepository.confirm(
+                            target.matchId(), seatId, reservedPayload, ttl);
+                    if (!ok) {
+                        log.warn("[Redis] HOLD/EXPIRE_PENDING→RESERVED 전이 실패 — "
+                                + "matchId={}, seatId={}", target.matchId(), seatId);
+                    }
+                } else {
+                    // 키 없음 — TTL 자연 만료 후 결제완료가 늦게 도착한 보정 경로.
+                    // RESERVED 를 새로 박아 다른 사용자의 점유를 차단한다.
+                    seatHoldRepository.upsertReserved(
+                            target.matchId(), seatId, reservedPayload, ttl);
+                    log.info("[Redis] 만료된 키에 RESERVED 신규 SET — "
+                            + "matchId={}, seatId={}, reservationId={}",
+                            target.matchId(), seatId, target.reservationId());
                 }
             } catch (Exception e) {
-                log.warn("[Redis] 예매 확정 좌석 처리 실패 — 자연 만료 대기. matchId={}, seatId={}",
+                log.warn("[Redis] 예매 확정 좌석 처리 실패 — matchId={}, seatId={}",
                         target.matchId(), seatId, e);
             }
         });

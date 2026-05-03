@@ -82,11 +82,21 @@ public class PaymentEventConsumer {
     @DltHandler
     @Transactional
     public void handleDlt(ConsumerRecord<String, String> record) {
+        PaymentCompletedEvent event;
         try {
-            PaymentCompletedEvent event = objectMapper.readValue(record.value(), PaymentCompletedEvent.class);
-            log.error("[payment.completed.DLT] 예매 확정 최대 재시도 초과 — 환불 이벤트 발행. paymentId={}, orderId={}",
-                    event.paymentId(), event.orderId());
+            event = objectMapper.readValue(record.value(), PaymentCompletedEvent.class);
+        } catch (Exception e) {
+            // payload 자체가 깨진 케이스 — 재시도해도 동일하게 실패하므로
+            // 로그만 남기고 ack 한다 (재처리 무한 루프 방지).
+            log.error("[payment.completed.DLT] payload 역직렬화 실패 — 메시지 ack 후 폐기. payload={}",
+                    record.value(), e);
+            return;
+        }
 
+        log.error("[payment.completed.DLT] 예매 확정 최대 재시도 초과 — 환불 이벤트 발행. paymentId={}, orderId={}",
+                event.paymentId(), event.orderId());
+
+        try {
             Events.trigger(
                     UUID.randomUUID().toString(),
                     "RESERVATION",
@@ -99,8 +109,13 @@ public class PaymentEventConsumer {
                     )
             );
         } catch (Exception e) {
-            // DLT 처리 자체가 실패하면 수동 개입 필요 — 로그로 기록
-            log.error("[payment.completed.DLT] DLT 처리 중 예외 발생. 수동 개입 필요.", e);
+            // 환불 트리거 발행 실패는 silent 처리 금지 — 환불 누락 위험.
+            // 트랜잭션 롤백 + 예외 전파로 Kafka 컨테이너가 ack 하지 않고 재시도하도록 한다.
+            log.error("[payment.completed.DLT] 환불 트리거(reservation.confirmation.failed) 발행 실패 — "
+                    + "재시도/수동 개입 필요. paymentId={}, orderId={}",
+                    event.paymentId(), event.orderId(), e);
+            throw new IllegalStateException(
+                    "DLT 환불 트리거 발행 실패: orderId=" + event.orderId(), e);
         }
     }
 }

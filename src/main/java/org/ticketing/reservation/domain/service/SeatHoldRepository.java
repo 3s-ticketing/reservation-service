@@ -50,6 +50,19 @@ public interface SeatHoldRepository {
      */
     boolean confirm(UUID matchId, UUID seatId, SeatHold reservedValue, Duration ttl);
 
+    /**
+     * RESERVED 페이로드를 무조건 SET 한다 (NX 없는 일반 SET, 기존 키 덮어쓰기).
+     *
+     * <p>HOLD/EXPIRE_PENDING TTL 자연 만료 후 결제완료 이벤트가 늦게 도착해
+     * Redis 키가 사라진 상태에서, RESERVED 키를 다시 만들어 다른 사용자의 점유를 차단한다.
+     *
+     * <p>일반 흐름의 HOLD→RESERVED 전이는 {@link #confirm} 을 사용하라.
+     * 본 메서드는 confirm 가 0(키 없음/owner 불일치)을 반환했을 때의 보정 경로 전용이다.
+     *
+     * @param ttl RESERVED TTL (티켓 오픈 시각까지의 duration 등)
+     */
+    void upsertReserved(UUID matchId, UUID seatId, SeatHold reservedValue, Duration ttl);
+
     /** 현재 락 정보 조회 (HOLD 든 RESERVED 든). */
     Optional<SeatHold> find(UUID matchId, UUID seatId);
 

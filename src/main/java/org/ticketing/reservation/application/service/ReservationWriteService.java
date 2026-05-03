@@ -66,6 +66,8 @@ public class ReservationWriteService {
                 .map(ReservationSeat::getSeatId)
                 .toList();
         UUID matchId = reservation.getMatchId();
+        UUID reservationId = reservation.getId();
+        UUID userId = reservation.getUserId();
 
         reservation.cancel();
         reservation.delete(command.canceledBy());
@@ -77,7 +79,7 @@ public class ReservationWriteService {
                 command.cancelReason()
         ));
 
-        return new SeatCleanupTarget(matchId, activeSeatIds);
+        return new SeatCleanupTarget(matchId, reservationId, userId, activeSeatIds);
     }
 
     public ReservationResult confirm(ConfirmReservationCommand command) {
@@ -105,10 +107,12 @@ public class ReservationWriteService {
                 .map(ReservationSeat::getSeatId)
                 .toList();
         UUID matchId = reservation.getMatchId();
+        UUID reservationId = reservation.getId();
+        UUID userId = reservation.getUserId();
 
         reservation.expire();
 
-        return new SeatCleanupTarget(matchId, activeSeatIds);
+        return new SeatCleanupTarget(matchId, reservationId, userId, activeSeatIds);
     }
 
     // ──────────────────────────────────────────

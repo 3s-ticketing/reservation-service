@@ -309,6 +309,27 @@ public class RedisSeatHoldRepository implements SeatHoldRepository {
         }
     }
 
+    /**
+     * RESERVED 페이로드 무조건 SET (NX 없는 일반 SET).
+     *
+     * <p>HOLD/EXPIRE_PENDING TTL 자연 만료 후 결제완료 이벤트가 늦게 도착해
+     * Redis 키가 사라진 보정 경로에서 사용된다. holds set 에는 추가하지 않는다 — RESERVED 는
+     * 예매당 좌석 카운트 제한 검사 대상이 아니기 때문 (이미 결제 완료된 좌석).
+     * hold_expiry_index 에서는 안전하게 제거한다 (혹시 stale 항목이 남아있을 경우 대비).
+     */
+    @Override
+    public void upsertReserved(UUID matchId, UUID seatId, SeatHold reservedValue, Duration ttl) {
+        try {
+            String json = objectMapper.writeValueAsString(reservedValue);
+            redisTemplate.opsForValue().set(seatKey(matchId, seatId), json, ttl);
+            redisTemplate.opsForZSet().remove(HOLD_EXPIRY_INDEX_KEY, holdMember(matchId, seatId));
+        } catch (Exception e) {
+            log.error("[Redis] RESERVED upsert 실패 - matchId={}, seatId={}",
+                    matchId, seatId, e);
+            throw new InternalServerException("Redis RESERVED upsert 실패");
+        }
+    }
+
     @Override
     public Optional<SeatHold> find(UUID matchId, UUID seatId) {
         try {
