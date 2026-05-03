@@ -37,10 +37,12 @@ import org.ticketing.reservation.infrastructure.redis.SeatReservedTtlPolicy;
  * <h3>cancel/expire 시 Redis 정리</h3>
  * <p>{@code cancel} / {@code expire} 는 다음 순서로 동작한다:
  * <ol>
- *   <li>read tx 로 활성 좌석을 캡처</li>
- *   <li>{@link ReservationWriteService} 가 write tx 로 DB 변경 + 커밋</li>
- *   <li>커밋 후 Redis 락을 일괄 해제 — 다른 사용자가 좌석을 다시 점유 가능하도록</li>
+ *   <li>{@link ReservationWriteService} 가 write tx 안에서 활성 좌석 ID 를 캡처 후 DB 변경 + 커밋</li>
+ *   <li>커밋 후 반환된 {@link SeatCleanupTarget} 으로 Redis 락을 일괄 해제</li>
  * </ol>
+ * 좌석 ID 캡처를 DB 쓰기와 동일 트랜잭션 안에서 수행함으로써,
+ * 트랜잭션 경계 밖 pre-snapshot 을 사용할 때 발생하는 동시 {@code confirmReservationSeat()}
+ * 호출로 인한 stale 스냅샷 문제를 방지한다.
  * DB 가 롤백되어도 Redis 가 먼저 풀리는 일이 없도록 항상 DB 커밋 후에 Redis 를 정리한다.
  */
 @Slf4j
@@ -71,8 +73,7 @@ public class ReservationApplicationService {
      * 예매 취소 — 사용자 요청.
      *
      * <ol>
-     *   <li>활성 좌석 ID 캡처 (read tx)</li>
-     *   <li>DB 취소 (write tx 커밋)</li>
+     *   <li>DB 취소 + 활성 좌석 ID 캡처 (동일 write tx 안에서 수행 — stale 스냅샷 방지)</li>
      *   <li>Redis 락 해제 (커밋 후) — 다른 사용자가 좌석을 다시 점유 가능하도록</li>
      * </ol>
      *
@@ -81,8 +82,7 @@ public class ReservationApplicationService {
      * (보상 메커니즘은 추후 reconciliation 잡으로 도입 예정)
      */
     public void cancel(CancelReservationCommand command) {
-        SeatCleanupTarget target = collectActiveSeats(command.reservationId());
-        reservationWriteService.cancel(command);
+        SeatCleanupTarget target = reservationWriteService.cancel(command);
         releaseSeatsAfterCommit(target);
     }
 
@@ -107,13 +107,16 @@ public class ReservationApplicationService {
     /**
      * 예매 만료 — TTL 만료 이벤트 수신 시 내부 호출.
      *
-     * <p>cancel 과 동일하게 활성 좌석을 캡처한 뒤 DB 만료 → Redis 정리 순으로 진행.
+     * <p>cancel 과 동일하게, 활성 좌석 캡처를 DB 만료와 동일 트랜잭션 안에서 수행한 뒤
+     * 커밋 후 Redis 정리를 진행한다.
      */
     public ReservationResult expire(ExpireReservationCommand command) {
-        SeatCleanupTarget target = collectActiveSeats(command.reservationId());
-        ReservationResult result = reservationWriteService.expire(command);
+        SeatCleanupTarget target = reservationWriteService.expire(command);
         releaseSeatsAfterCommit(target);
-        return result;
+        return ReservationResult.from(
+                reservationRepository.findActiveById(command.reservationId())
+                        .orElseThrow(() -> new ReservationNotFoundException(command.reservationId()))
+        );
     }
 
     // ──────────────────────────────────────────
@@ -210,7 +213,13 @@ public class ReservationApplicationService {
     // ──────────────────────────────────────────
 
     /**
-     * cancel/confirm/expire 직전 활성 좌석을 캡처한다.
+     * confirm 직전 활성 좌석을 캡처한다.
+     *
+     * <p>cancel / expire 는 {@link ReservationWriteService} 가 동일 write tx 안에서
+     * 좌석 ID 를 캡처하므로 이 메서드를 사용하지 않는다.
+     * confirm 에서만 pre-snapshot 이 사용된다 — confirm tx 와 사이에 좌석이 추가되더라도
+     * {@code confirmReservationSeat()} 가 이미 해당 좌석의 Redis 를 RESERVED 로 전이한 뒤이므로
+     * 누락이 무해하다.
      *
      * <p>{@code @Transactional} 을 선언하지 않는다. 같은 빈 내부에서 호출되면
      * Spring 프록시가 개입하지 않아 어노테이션이 무효화되기 때문이다.
@@ -282,6 +291,4 @@ public class ReservationApplicationService {
         });
     }
 
-    /** cancel/expire 후 Redis 정리 대상. */
-    private record SeatCleanupTarget(UUID matchId, List<UUID> seatIds) {}
 }
