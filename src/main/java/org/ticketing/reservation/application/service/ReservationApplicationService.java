@@ -159,10 +159,19 @@ public class ReservationApplicationService {
     // ──────────────────────────────────────────
 
     /**
-     * cancel/expire 직전 활성 좌석을 캡처한다 (read tx 한 건).
-     * 이 단계에서 잡힌 좌석들이 후속 Redis release 의 대상이 된다.
+     * cancel/confirm/expire 직전 활성 좌석을 캡처한다.
+     *
+     * <p>{@code @Transactional} 을 선언하지 않는다. 같은 빈 내부에서 호출되면
+     * Spring 프록시가 개입하지 않아 어노테이션이 무효화되기 때문이다.
+     *
+     * <p>트랜잭션 없이도 안전한 이유: {@code JpaReservationRepository.findActiveById} 는
+     * {@code @EntityGraph(attributePaths = "seats")} 로 {@code seats} 를 쿼리 시점에 JOIN 하여
+     * 즉시 로드한다. Spring Data JPA 가 해당 쿼리에 자체 read-only 트랜잭션을 부여하므로
+     * {@code LazyInitializationException} 이 발생하지 않는다.
+     *
+     * <p>주의: {@code findActiveById} 구현이 변경되어 즉시 로딩 보장이 사라지면
+     * 이 메서드도 함께 재검토해야 한다.
      */
-    @Transactional(readOnly = true)
     protected SeatCleanupTarget collectActiveSeats(UUID reservationId) {
         Reservation reservation = reservationRepository.findActiveById(reservationId)
                 .orElseThrow(() -> new ReservationNotFoundException(reservationId));
