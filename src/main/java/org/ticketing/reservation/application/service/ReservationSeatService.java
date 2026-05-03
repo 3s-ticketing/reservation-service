@@ -132,11 +132,6 @@ public class ReservationSeatService {
                 .findFirst()
                 .orElse(newSeat);
 
-        try {
-            seatHoldRepository.release(matchId, command.seatId());
-        } catch (Exception e) {
-            log.warn("[Redis] 선점 해제 실패 - TTL 자연 만료 대기 matchId={}, seatId={}",
-                    matchId, command.seatId(), e);
         // HOLD → RESERVED 전이. ticketOpenAt 기반 TTL 적용.
         // (TTL 정책이 ticketOpenAt 미수신 시 fallback 사용)
         Duration reservedTtl = reservedTtlPolicy.ttlFor(matchId);
@@ -150,11 +145,11 @@ public class ReservationSeatService {
         boolean confirmed = seatHoldRepository.confirm(
                 matchId, command.seatId(), reservedPayload, reservedTtl);
         if (!confirmed) {
-            // HOLD 가 만료됐거나 다른 owner — DB 는 이미 RESERVED 로 INSERT 됐으므로
-            // 보상 로직은 추후(스케줄러/이벤트) 처리. 지금은 경고 로그만.
-            log.warn("[Redis] HOLD→RESERVED 전이 실패 — DB 영속화는 완료됨. "
-                    + "matchId={}, seatId={}, reservationId={}",
-                    matchId, command.seatId(), command.reservationId());
+            // HOLD 만료 또는 owner 불일치 — 트랜잭션을 롤백시켜 DB 행 삽입도 취소한다.
+            // saveAndFlush 는 flush(SQL 전송)만 했을 뿐 아직 커밋되지 않았으므로
+            // 예외를 던지면 @Transactional 이 롤백을 보장한다.
+            throw new ConflictException(
+                    "좌석 선점 정보가 만료되었거나 전이에 실패했습니다. 다시 시도해 주세요.");
         }
 
         eventPublisher.publishReserved(new ReservationSeatReservedEvent(
