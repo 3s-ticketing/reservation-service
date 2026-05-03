@@ -11,6 +11,7 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.annotation.RetryableTopic;
 import org.springframework.retry.annotation.Backoff;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 import org.ticketing.common.event.Events;
 import org.ticketing.common.messaging.annotation.IdempotentConsumer;
 import org.ticketing.reservation.application.dto.command.ConfirmReservationCommand;
@@ -79,6 +80,7 @@ public class PaymentEventConsumer {
      * 이벤트 발행은 Outbox 패턴을 통해 원자적으로 처리된다.
      */
     @DltHandler
+    @Transactional
     public void handleDlt(ConsumerRecord<String, String> record) {
         try {
             PaymentCompletedEvent event = objectMapper.readValue(record.value(), PaymentCompletedEvent.class);
