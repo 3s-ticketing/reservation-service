@@ -14,8 +14,6 @@ import org.springframework.stereotype.Component;
 import org.ticketing.reservation.application.dto.command.CancelReservationCommand;
 import org.ticketing.reservation.application.service.ReservationApplicationService;
 import org.ticketing.reservation.domain.event.payload.CancelReason;
-import org.ticketing.reservation.domain.exception.InvalidReservationStateException;
-import org.ticketing.reservation.domain.exception.ReservationNotFoundException;
 import org.ticketing.reservation.infrastructure.redis.MatchTicketWindowCache;
 
 /**
@@ -24,11 +22,12 @@ import org.ticketing.reservation.infrastructure.redis.MatchTicketWindowCache;
  * <h3>처리 흐름</h3>
  * <ol>
  *   <li>해당 경기의 취소 가능한 예매(PENDING + COMPLETED) ID 목록 조회</li>
- *   <li>각 예매에 대해 {@code cancel()} 호출
+ *   <li>각 예매에 대해 {@code cancelIfActive()} 호출
  *       <ul>
  *         <li>DB CANCELLED 전이 + Redis 좌석 락 해제</li>
  *         <li>Outbox 트랜잭션 안에서 {@code reservation.canceled} 이벤트 등록
  *             → payment-service 가 환불 처리</li>
+ *         <li>이미 종착 상태(CANCELLED/EXPIRED)이거나 예매 없음 → 내부 skip</li>
  *       </ul>
  *   </li>
  *   <li>{@link MatchTicketWindowCache} 에서 해당 경기 TTL 정보 제거</li>
@@ -38,8 +37,7 @@ import org.ticketing.reservation.infrastructure.redis.MatchTicketWindowCache;
  * <p>개별 예매 취소 실패(일시적 오류)는 격리하여 로그를 남기고 다음 예매로 진행한다.
  * 하나의 실패가 전체 메시지 처리를 막지 않도록 한다.
  * 단, 실패 건이 하나라도 있으면 예외를 전파하여 {@code @RetryableTopic} 재시도를 유도한다.
- * 재시도 시 이미 CANCELLED 된 예매는 {@link InvalidReservationStateException} 으로
- * 멱등 처리되므로 중복 취소가 발생하지 않는다.
+ * 재시도 시 이미 CANCELLED 된 예매는 {@code cancelIfActive()} 내부에서 skip 처리된다.
  *
  * <h3>재시도 전략</h3>
  * <p>3회(1 + 2) 지수 백오프 재시도. 소진 시 DLT 격리 + ERROR 로그.
@@ -85,19 +83,9 @@ public class MatchCanceledEventConsumer {
 
         for (UUID reservationId : cancellableIds) {
             try {
-                reservationApplicationService.cancel(
+                // 이미 종착 상태이거나 예매 없음 → 내부 skip. 일시적 오류만 예외로 전파.
+                reservationApplicationService.cancelIfActive(
                         new CancelReservationCommand(reservationId, "match.canceled", CancelReason.MATCH_CANCELED));
-                successCount++;
-
-            } catch (InvalidReservationStateException e) {
-                // 이미 CANCELLED / EXPIRED → 멱등 처리
-                log.info("[match.canceled] 예매 이미 처리됨 (idempotent skip) — "
-                        + "reservationId={}, status={}", reservationId, e.getMessage());
-                successCount++;
-
-            } catch (ReservationNotFoundException e) {
-                // 이미 삭제된 예매 → 무시
-                log.warn("[match.canceled] 예매 없음 (skip) — reservationId={}", reservationId);
                 successCount++;
 
             } catch (Exception e) {

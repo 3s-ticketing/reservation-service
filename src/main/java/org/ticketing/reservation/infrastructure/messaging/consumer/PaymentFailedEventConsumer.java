@@ -11,8 +11,6 @@ import org.springframework.retry.annotation.Backoff;
 import org.springframework.stereotype.Component;
 import org.ticketing.reservation.application.dto.command.ExpireReservationCommand;
 import org.ticketing.reservation.application.service.ReservationApplicationService;
-import org.ticketing.reservation.domain.exception.InvalidReservationStateException;
-import org.ticketing.reservation.domain.exception.ReservationNotFoundException;
 
 /**
  * payment.failed 이벤트 소비자.
@@ -28,14 +26,9 @@ import org.ticketing.reservation.domain.exception.ReservationNotFoundException;
  * 다른 사용자가 좌석을 선점할 수 없으므로, 결제 실패 수신 즉시 해제한다.
  *
  * <h3>멱등성 처리</h3>
- * <p>{@code @IdempotentConsumer} 를 사용하지 않는다.
- * {@code InboxAdvice} 의 {@code @Transactional} 과 내부 {@code @Transactional}(REQUIRED)이
- * 같은 트랜잭션을 공유하므로, 상태 전이 실패 예외가 트랜잭션을 rollback-only 로 마킹하여
- * 커밋 시점에 {@code UnexpectedRollbackException} 이 발생하는 문제가 있다.
- *
- * <p>대신 도메인 예외({@link InvalidReservationStateException}, {@link ReservationNotFoundException})를
- * catch 하여 이미 처리된 메시지를 정상 반환으로 처리한다. 이 예외들은 각 서비스가 자체
- * {@code @Transactional} 안에서 실행되므로 consumer 메서드 레벨에서 안전하게 catch 가능하다.
+ * <p>{@link ReservationApplicationService#expireIfActive} 를 사용한다.
+ * 예매가 없거나 이미 종착 상태(EXPIRED/CANCELLED)이면 서비스 내부에서 skip 처리되므로
+ * 소비자가 도메인 예외를 직접 catch 할 필요 없다.
  *
  * <h3>재시도 전략</h3>
  * <p>상태 전이 예외·예매 미존재는 재시도 없이 정상 처리(idempotent).
@@ -71,21 +64,9 @@ public class PaymentFailedEventConsumer {
         log.info("[payment.failed] 수신 — paymentId={}, orderId={}",
                 event.paymentId(), event.orderId());
 
-        try {
-            // DB 만료 + Redis 좌석 락 즉시 해제 (DB 커밋 후)
-            reservationApplicationService.expire(new ExpireReservationCommand(event.orderId()));
-            log.info("[payment.failed] 예매 만료 및 좌석 해제 완료 — reservationId={}", event.orderId());
-
-        } catch (InvalidReservationStateException e) {
-            // 이미 EXPIRED / CANCELLED / COMPLETED 상태 → 멱등 처리
-            log.info("[payment.failed] 예매가 이미 처리된 상태 (idempotent skip) — "
-                    + "reservationId={}, status={}", event.orderId(), e.getMessage());
-
-        } catch (ReservationNotFoundException e) {
-            // 이미 삭제됐거나 존재하지 않는 예매 → 무시
-            log.warn("[payment.failed] 예매를 찾을 수 없음 (skip) — reservationId={}", event.orderId());
-        }
-        // 그 외 예외는 전파 → @RetryableTopic 재시도
+        // 이미 종착 상태이거나 예매 없음 → 내부에서 skip. 그 외 예외는 전파 → @RetryableTopic 재시도
+        reservationApplicationService.expireIfActive(new ExpireReservationCommand(event.orderId()));
+        log.info("[payment.failed] 예매 만료 처리 완료 — reservationId={}", event.orderId());
     }
 
     /**

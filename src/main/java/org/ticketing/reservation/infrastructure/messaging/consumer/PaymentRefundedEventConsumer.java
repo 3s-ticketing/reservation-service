@@ -13,8 +13,6 @@ import org.springframework.stereotype.Component;
 import org.ticketing.reservation.application.dto.command.CancelReservationCommand;
 import org.ticketing.reservation.application.service.ReservationApplicationService;
 import org.ticketing.reservation.domain.event.payload.CancelReason;
-import org.ticketing.reservation.domain.exception.InvalidReservationStateException;
-import org.ticketing.reservation.domain.exception.ReservationNotFoundException;
 import org.ticketing.ticket.application.service.TicketService;
 
 /**
@@ -73,25 +71,13 @@ public class PaymentRefundedEventConsumer {
         log.info("[payment.refunded] 수신 — paymentId={}, reservationId={}",
                 event.paymentId(), reservationId);
 
-        // 1. 예매 취소 (DB CANCELLED 전이 + Redis 락 해제)
-        try {
-            reservationApplicationService.cancel(
-                    new CancelReservationCommand(reservationId, "payment.refunded", CancelReason.USER_CANCEL));
-            log.info("[payment.refunded] 예매 취소 완료 — reservationId={}", reservationId);
-
-        } catch (InvalidReservationStateException e) {
-            // 이미 CANCELLED / EXPIRED 상태 → 멱등 처리
-            log.info("[payment.refunded] 예매가 이미 처리된 상태 (idempotent skip) — "
-                    + "reservationId={}, status={}", reservationId, e.getMessage());
-
-        } catch (ReservationNotFoundException e) {
-            // 이미 삭제됐거나 존재하지 않는 예매 → 무시
-            log.warn("[payment.refunded] 예매를 찾을 수 없음 (skip) — reservationId={}", reservationId);
-        }
+        // 1. 예매 취소 (이미 종착 상태면 내부 skip, 그 외 예외는 전파 → @RetryableTopic 재시도)
+        reservationApplicationService.cancelIfActive(
+                new CancelReservationCommand(reservationId, "payment.refunded", CancelReason.USER_CANCEL));
+        log.info("[payment.refunded] 예매 취소 처리 완료 — reservationId={}", reservationId);
 
         // 2. 티켓 취소 + 소프트 삭제 (티켓이 없으면 내부에서 무시)
         ticketService.cancelAndDeleteByReservationId(reservationId, "payment.refunded");
-        // 그 외 예외는 전파 → @RetryableTopic 재시도
     }
 
     /**

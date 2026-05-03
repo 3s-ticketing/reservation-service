@@ -117,6 +117,57 @@ public class ReservationApplicationService {
     }
 
     // ──────────────────────────────────────────
+    // 소비자용 멱등 변형 — Kafka at-least-once 환경 전용
+    // ──────────────────────────────────────────
+
+    /**
+     * 예매 취소 — Kafka 소비자 전용 멱등 변형.
+     *
+     * <p>예매가 없거나 이미 종착 상태(EXPIRED/CANCELLED)이면 조용히 반환한다.
+     * 이를 통해 소비자가 도메인 예외를 직접 catch 할 필요 없이 at-least-once 재전송을
+     * 안전하게 처리할 수 있다.
+     *
+     * <p>API/동기 경로에서는 {@link #cancel} 을 사용해 엄격한 예외를 유지한다.
+     */
+    public void cancelIfActive(CancelReservationCommand command) {
+        Reservation reservation = reservationRepository.findActiveById(command.reservationId())
+                .orElse(null);
+        if (reservation == null) {
+            log.info("[idempotent] 예매 없음 또는 이미 소프트 삭제됨 — skip. reservationId={}",
+                    command.reservationId());
+            return;
+        }
+        if (!reservation.getStatus().canTransitionTo(ReservationStatus.CANCELLED)) {
+            log.info("[idempotent] 예매 취소 불가 상태 — skip. reservationId={}, status={}",
+                    command.reservationId(), reservation.getStatus());
+            return;
+        }
+        cancel(command);
+    }
+
+    /**
+     * 예매 만료 — Kafka 소비자 전용 멱등 변형.
+     *
+     * <p>{@link #cancelIfActive} 와 동일한 설계 원칙을 따른다.
+     * EXPIRED/CANCELLED 등 이미 종착 상태인 경우 조용히 반환한다.
+     */
+    public void expireIfActive(ExpireReservationCommand command) {
+        Reservation reservation = reservationRepository.findActiveById(command.reservationId())
+                .orElse(null);
+        if (reservation == null) {
+            log.info("[idempotent] 예매 없음 또는 이미 소프트 삭제됨 — skip. reservationId={}",
+                    command.reservationId());
+            return;
+        }
+        if (!reservation.getStatus().canTransitionTo(ReservationStatus.EXPIRED)) {
+            log.info("[idempotent] 예매 만료 불가 상태 — skip. reservationId={}, status={}",
+                    command.reservationId(), reservation.getStatus());
+            return;
+        }
+        expire(command);
+    }
+
+    // ──────────────────────────────────────────
     // 쿼리
     // ──────────────────────────────────────────
 
