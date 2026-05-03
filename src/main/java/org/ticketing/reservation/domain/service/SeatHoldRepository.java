@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.ticketing.reservation.domain.model.redis.HoldResult;
 import org.ticketing.reservation.domain.model.redis.SeatHold;
 
 /**
@@ -15,11 +16,22 @@ import org.ticketing.reservation.domain.model.redis.SeatHold;
 public interface SeatHoldRepository {
 
     /**
-     * 좌석 선점 시도. 키가 없을 때만 HOLD 페이로드로 생성. TTL 660초 (결제 10분 + 유예 1분).
+     * 좌석 선점 시도 (원자적 cap 검사 포함).
      *
-     * @return 성공 시 true. 이미 다른 사용자가 HOLD/RESERVED/EXPIRE_PENDING 중이면 false.
+     * <p>단일 Lua 스크립트로 아래 동작을 원자적으로 수행한다:
+     * <ol>
+     *   <li>holds set 의 live 멤버를 확인해 현재 Redis HOLD 수를 계산하고,
+     *       stale 멤버(이미 TTL 만료된 좌석)를 정리한다.</li>
+     *   <li>{@code alreadyReserved + liveHoldCount >= maxCap} 이면 → {@link HoldResult#CAP_EXCEEDED}</li>
+     *   <li>해당 좌석 키({@code seat:{matchId}:{seatId}})에 SETNX 시도.
+     *       이미 점유 중이면 → {@link HoldResult#SEAT_TAKEN}</li>
+     *   <li>성공 시 holds set 갱신, hold_expiry_index 등록 → {@link HoldResult#SUCCESS}</li>
+     * </ol>
+     *
+     * @param alreadyReserved DB 에 이미 RESERVED 상태로 확정된 좌석 수 (호출자가 계산)
+     * @param maxCap          예매당 허용 최대 좌석 수
      */
-    boolean hold(UUID matchId, UUID seatId, SeatHold value);
+    HoldResult hold(UUID matchId, UUID seatId, SeatHold value, int alreadyReserved, int maxCap);
 
     /**
      * HOLD → RESERVED 전이. 결제 확정 시 호출.

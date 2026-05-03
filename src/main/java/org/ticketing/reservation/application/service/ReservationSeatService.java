@@ -24,6 +24,7 @@ import org.ticketing.reservation.domain.exception.SeatAlreadyHeldException;
 import org.ticketing.reservation.domain.model.Reservation;
 import org.ticketing.reservation.domain.model.ReservationSeat;
 import org.ticketing.reservation.domain.model.ReservationSeatStatus;
+import org.ticketing.reservation.domain.model.redis.HoldResult;
 import org.ticketing.reservation.domain.model.redis.SeatHold;
 import org.ticketing.reservation.domain.repository.ReservationRepository;
 import org.ticketing.reservation.domain.repository.ReservationSeatRepository;
@@ -57,20 +58,16 @@ public class ReservationSeatService {
 
         UUID matchId = reservation.getMatchId();
 
-        // ✅ DB RESERVED + Redis HOLD 합산하여 4매 제한 검증
-        long reservedCount = reservation.getSeats().stream()
+        // DB RESERVED 수 — Lua 스크립트에 전달해 Redis live HOLD 수와 합산 후 cap 검사
+        int reservedCount = (int) reservation.getSeats().stream()
                 .filter(seat -> seat.getSeatStatus().isActive())
                 .count();
-        int holdCount = seatHoldRepository.countHoldsByReservationId(command.reservationId());
-
-        if (reservedCount + holdCount >= MAX_SEAT_PER_RESERVATION) {
-            throw new BadRequestException("예약 가능한 최대 좌석 수를 초과하였습니다.");
-        }
 
         if (!seatProvider.existsAndUsable(matchId, command.seatId())) {
             throw new BadRequestException("유효하지 않은 좌석입니다.");
         }
 
+        // DB RESERVED 체크 — Redis key 가 TTL 만료돼도 DB 행이 남은 엣지 케이스 대비
         reservationSeatRepository.findActiveByMatchIdAndSeatId(matchId, command.seatId())
                 .ifPresent(rs -> {
                     throw new SeatAlreadyHeldException(matchId, command.seatId());
@@ -84,9 +81,13 @@ public class ReservationSeatService {
                 OffsetDateTime.now().plusSeconds(660)  // 결제 윈도우(600s) + 유예(60s)
         );
 
-        boolean held = seatHoldRepository.hold(matchId, command.seatId(), seatHold);
-        if (!held) {
-            throw new SeatAlreadyHeldException(matchId, command.seatId());
+        // 단일 Lua 스크립트로 원자적으로: cap 검사 + stale 정리 + SETNX + holds 갱신
+        HoldResult holdResult = seatHoldRepository.hold(
+                matchId, command.seatId(), seatHold, reservedCount, MAX_SEAT_PER_RESERVATION);
+        switch (holdResult) {
+            case CAP_EXCEEDED -> throw new BadRequestException("예약 가능한 최대 좌석 수를 초과하였습니다.");
+            case SEAT_TAKEN   -> throw new SeatAlreadyHeldException(matchId, command.seatId());
+            case SUCCESS      -> { /* 정상 흐름 */ }
         }
 
         eventPublisher.publishHeld(new ReservationSeatHeldEvent(
