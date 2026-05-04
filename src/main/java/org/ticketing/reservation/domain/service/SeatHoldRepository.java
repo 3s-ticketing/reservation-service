@@ -69,6 +69,16 @@ public interface SeatHoldRepository {
     /** 락 해제. cancel/expire 흐름에서 사용. */
     void release(UUID matchId, UUID seatId);
 
+    /**
+     * 소유권 검증 후 조건부 락 해제.
+     *
+     * <p>reservationId + userId 가 일치할 때만 삭제한다.
+     * 만료된 홀드 정리 시 다른 사용자의 키를 덮어쓰는 것을 방지한다.
+     *
+     * @return 삭제 성공 시 true, 소유자 불일치 또는 키 없음 시 false
+     */
+    boolean releaseIfOwnedBy(UUID matchId, UUID seatId, UUID reservationId, UUID userId);
+
     /** 특정 reservation 의 활성 HOLD 개수 (예매당 최대 좌석 수 제한 등에 사용).
      *
      * <p>HOLD 와 EXPIRE_PENDING 상태 모두 카운트에 포함한다.

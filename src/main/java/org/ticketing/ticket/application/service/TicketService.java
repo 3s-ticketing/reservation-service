@@ -93,6 +93,10 @@ public class TicketService {
         Ticket ticket = ticketRepository.findActiveById(command.ticketId())
                 .orElseThrow(() -> new TicketNotFoundException(command.ticketId()));
 
+        if (!ticket.getUserId().equals(command.userId()) && !command.isAdmin()) {
+            throw new ForbiddenException("티켓 취소 권한이 없습니다.");
+        }
+
         ticket.cancel();
 
         eventPublisher.publishCanceled(new TicketCanceledEvent(
@@ -157,16 +161,14 @@ public class TicketService {
 
     // 쿼리
 
-    public TicketResult getTicketByReservation(UUID reservationId) {
-        return ticketRepository.findActiveByReservationId(reservationId)
-                .map(TicketResult::from)
+    public TicketResult getTicketByReservation(UUID reservationId, UUID requesterId, boolean isAdmin) {
+        Ticket ticket = ticketRepository.findActiveByReservationId(reservationId)
                 .orElseThrow(() -> TicketNotFoundException.byReservation(reservationId));
-    }
 
-    public List<TicketResult> getMyTickets(UUID userId) {
-        return ticketRepository.findAllByUserId(userId)
-                .stream()
-                .map(TicketResult::from)
-                .toList();
+        if (!ticket.getUserId().equals(requesterId) && !isAdmin) {
+            throw new ForbiddenException("본인의 티켓만 조회할 수 있습니다.");
+        }
+
+        return TicketResult.from(ticket);
     }
 }

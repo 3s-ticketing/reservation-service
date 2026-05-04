@@ -1,6 +1,5 @@
 package org.ticketing.reservation.infrastructure.event;
 
-import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -8,6 +7,7 @@ import org.ticketing.common.event.Events;
 import org.ticketing.reservation.domain.event.ReservationEventPublisher;
 import org.ticketing.reservation.domain.event.payload.ReservationCancelledEvent;
 import org.ticketing.reservation.domain.event.payload.ReservationCompletedEvent;
+import org.ticketing.reservation.domain.event.payload.ReservationConfirmationFailedEvent;
 import org.ticketing.reservation.domain.event.payload.ReservationCreatedEvent;
 import org.ticketing.reservation.domain.event.payload.ReservationExpiredEvent;
 import org.ticketing.reservation.domain.event.payload.ReservationSeatHeldEvent;
@@ -36,15 +36,32 @@ public class ReservationEventPublisherImpl implements ReservationEventPublisher 
     @Value("${topics.reservation.canceled:reservation.canceled}")
     private String canceledTopic;
 
+    @Value("${topics.reservation.confirmation-failed:reservation.confirmation.failed}")
+    private String confirmationFailedTopic;
+
     @Override
     public void publishCancelled(ReservationCancelledEvent event) {
         Events.trigger(
-                UUID.randomUUID().toString(),
+                "reservation-cancelled-" + event.reservationId(),  // correlationId (멱등성 보장)
+                DOMAIN_TYPE,
+                event.reservationId().toString(),                   // domainId (Kafka 파티션 키)
+                canceledTopic,                                      // eventType = topic
+                event                                               // payload
+        );
+        log.info("[ReservationCancelledEvent] Outbox 등록 - reservationId: {}, reason: {}",
+                event.reservationId(), event.cancelReason());
+    }
+
+    @Override
+    public void publishConfirmationFailed(ReservationConfirmationFailedEvent event) {
+        Events.trigger(
+                "reservation-confirmation-failed-" + event.reservationId(),
                 DOMAIN_TYPE,
                 event.reservationId().toString(),
-                canceledTopic,
+                confirmationFailedTopic,
                 event
         );
+        log.info("[ReservationConfirmationFailedEvent] Outbox 등록 - reservationId: {}", event.reservationId());
     }
 
     @Override

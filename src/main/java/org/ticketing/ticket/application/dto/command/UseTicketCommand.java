@@ -5,5 +5,5 @@ import java.util.UUID;
 public record UseTicketCommand(
         UUID ticketId,
         UUID userId,
-        boolean isAdmin  // ✅ 추가
+        boolean isAdmin
 ) {}
