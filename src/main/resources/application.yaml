@@ -73,3 +73,7 @@ kafka:
 scheduler:
   hold-expiry:
     delay-ms: 30000
+
+feign:
+   payment-service:
+      url: http://localhost:8082

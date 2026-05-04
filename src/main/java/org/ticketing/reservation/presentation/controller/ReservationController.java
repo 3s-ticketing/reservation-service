@@ -4,7 +4,9 @@ import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -13,7 +15,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
-import org.ticketing.common.util.SecurityUtil;
 import org.ticketing.reservation.application.dto.command.CancelReservationCommand;
 import org.ticketing.reservation.domain.event.payload.CancelReason;
 import org.ticketing.reservation.application.dto.query.GetMyReservationsQuery;
@@ -38,8 +39,10 @@ public class ReservationController {
     /** POST /api/reservations — 예매 생성 (좌석 HOLD 동시 수행) */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public ReservationResponseDto create(@RequestBody @Valid CreateReservationRequestDto request) {
-        UUID userId = SecurityUtil.getCurrentUserIdOrThrow();
+    public ReservationResponseDto create(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestBody @Valid CreateReservationRequestDto request) {
+        UUID userId = UUID.fromString(jwt.getSubject());
         return ReservationResponseDto.from(
                 reservationApplicationService.create(request.toCommand(userId))
         );
@@ -47,8 +50,9 @@ public class ReservationController {
 
     /** GET /api/reservations — 내 예매 목록 조회 */
     @GetMapping
-    public List<ReservationResponseDto> getMyReservations() {
-        UUID userId = SecurityUtil.getCurrentUserIdOrThrow();
+    public List<ReservationResponseDto> getMyReservations(
+            @AuthenticationPrincipal Jwt jwt) {
+        UUID userId = UUID.fromString(jwt.getSubject());
         return reservationApplicationService
                 .findMyReservations(new GetMyReservationsQuery(userId))
                 .stream()
