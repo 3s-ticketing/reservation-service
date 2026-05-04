@@ -101,10 +101,13 @@ public class Reservation extends BaseEntity {
     // ──────────────────────────────────────────
 
     /**
-     * 좌석을 HOLD 상태로 본 예매에 추가한다.
+     * 좌석을 본 예매에 추가한다 — 결제 확정 시점에 호출.
+     *
+     * <p>HOLD 단계는 Redis 가 단독으로 관리하므로 DB 에 들어오는 좌석은 항상
+     * RESERVED 상태로 생성된다. ({@link ReservationSeat} 생성자 참고)
      *
      * @param snapshot 외부 좌석 메타 스냅샷 (가격 포함)
-     * @return 새로 추가된 자식 좌석 엔티티
+     * @return 새로 추가된 자식 좌석 엔티티 (RESERVED)
      */
     public ReservationSeat addSeat(SeatSnapshot snapshot) {
         if (this.status != ReservationStatus.PENDING) {
@@ -175,10 +178,15 @@ public class Reservation extends BaseEntity {
                 .forEach(ReservationSeat::cancel);
     }
 
-    // TTL 만료 -> EXPIRED 상태 전이, 좌석은 Redis에만 있었으므로 DB 변경 없음
+    /**
+     * TTL 만료 → EXPIRED 상태 전이.
+     *
+     * <p>아직 결제 확정되지 않은 좌석(=Redis HOLD 만 존재)은 DB 에 행이 없으므로
+     * 본 메서드에서는 자식 좌석 컬렉션을 건드리지 않는다.
+     * Redis HOLD 키들은 application 레이어에서 별도로 release 한다.
+     */
     public void expire() {
         transitionTo(ReservationStatus.EXPIRED);
-        // ✅ HOLD는 Redis-only였으므로 DB seats 변경 없음
     }
 
     private void transitionTo(ReservationStatus target) {
