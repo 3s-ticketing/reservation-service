@@ -1,30 +1,39 @@
 spring:
+  cloud:
+    config:
+      import-check:
+        enabled: false
+      discovery:
+        enabled: false
+
   datasource:
-    url: jdbc:h2:mem:reservationdb;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
-    driver-class-name: org.h2.Driver
-    username: sa
-    password:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT}/${DB_NAME}?currentSchema=${DB_SCHEMA:reservation}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
 
   jpa:
     hibernate:
-      ddl-auto: create-drop
-    show-sql: true
+      ddl-auto: ${JPA_DDL_AUTO:create}
     properties:
       hibernate:
-        format_sql: true
-
-  flyway:
-    enabled: false
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        default_schema: ${DB_SCHEMA:reservation}
+        hbm2ddl:
+          create_schemas: true
 
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
     consumer:
-      group-id: reservation-service-local
+      group-id: reservation-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
 
 eureka:
   client:
-    enabled: false
-
-scheduler:
-  held-seat-expiry:
-    delay-ms: 30000
+    register-with-eureka: true
+    fetch-registry: true

@@ -39,6 +39,16 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+	// Spring Cloud — common-module 의 transitive 에 의존하지 않고 명시.
+	// (publish 된 common-module 캐시가 transitive 누락된 케이스 대비)
+	implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
+	implementation 'org.springframework.cloud:spring-cloud-starter-config'
+
+	// spring security — Keycloak JWT 검증 (gateway 가 검증한 토큰을 그대로 다시 검증)
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
 
 	// 공통 모듈 (org.ticketing:common:2.0-SNAPSHOT 로 publish 됨)
 	implementation 'org.ticketing:common:2.0-SNAPSHOT'
