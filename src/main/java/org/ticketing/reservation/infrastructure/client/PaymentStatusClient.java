@@ -6,9 +6,10 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.ticketing.reservation.infrastructure.client.dto.PaymentStatusResponse;
 
-@FeignClient(name = "payment-service", url = "${feign.payment-service.url}")
+@FeignClient(name = "payment-service")
 public interface PaymentStatusClient {
 
-    @GetMapping("/internal/payments/{reservationId}/status")
+    @GetMapping("/internal/payments/reservations/{reservationId}/success")
     PaymentStatusResponse getPaymentStatus(@PathVariable UUID reservationId);
+
 }

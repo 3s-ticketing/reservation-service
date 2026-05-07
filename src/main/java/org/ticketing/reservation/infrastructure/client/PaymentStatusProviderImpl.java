@@ -20,9 +20,14 @@ public class PaymentStatusProviderImpl implements PaymentStatusProvider {
     public PaymentStatus getPaymentStatus(UUID reservationId) {
         try {
             PaymentStatusResponse response = paymentStatusClient.getPaymentStatus(reservationId);
-            return response.status();
+            return switch (response.data().status()) {
+                case "SUCCESS" -> PaymentStatus.COMPLETED;
+                case "FAILED", "CANCELED" -> PaymentStatus.FAILED;
+                case "INIT", "IN_PROGRESS" -> PaymentStatus.PENDING;
+                default -> PaymentStatus.UNKNOWN;
+            };
         } catch (Exception e) {
-            log.error("[PaymentStatusProvider] 결제 상태 조회 실패 - reservationId: {}", reservationId, e);
+            log.error("[PaymentStatusProvider] 결제 상태 조회 실패", e);
             return PaymentStatus.UNKNOWN;
         }
     }
