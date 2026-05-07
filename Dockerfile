@@ -7,10 +7,10 @@ ARG GPR_TOKEN
 
 COPY build.gradle settings.gradle ./
 COPY gradle ./gradle
-RUN gradle dependencies --no-daemon || true
+RUN GPR_USER=${GPR_USER} GPR_TOKEN=${GPR_TOKEN} gradle dependencies --no-daemon || true
 
 COPY src ./src
-RUN gradle bootJar --no-daemon -x test
+RUN GPR_USER=${GPR_USER} GPR_TOKEN=${GPR_TOKEN} gradle bootJar --no-daemon -x test
 
 FROM eclipse-temurin:17-jre
 

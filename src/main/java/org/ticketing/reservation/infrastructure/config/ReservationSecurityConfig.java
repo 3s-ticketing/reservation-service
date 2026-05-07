@@ -1,5 +1,6 @@
 package org.ticketing.reservation.infrastructure.config;
 
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -8,6 +9,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.ticketing.config.security.LoginFilter;
 
 /**
  * reservation-service 보안 설정.
@@ -36,6 +38,20 @@ import org.springframework.security.web.SecurityFilterChain;
  */
 @Configuration
 public class ReservationSecurityConfig {
+
+    /**
+     * AppCtx 가 등록한 LoginFilter 빈은 Spring Boot 에 의해 서블릿 필터로 자동 등록된다.
+     * reservation-service 는 JWT 직접 검증 방식을 사용하므로 LoginFilter 가 서블릿 레벨에서
+     * 실행되면 BearerTokenAuthenticationFilter 가 세팅한 JwtAuthenticationToken 을
+     * SecurityContextHolder.clearContext() 로 날려버린다.
+     * 이를 막기 위해 서블릿 자동 등록만 비활성화한다.
+     */
+    @Bean
+    public FilterRegistrationBean<LoginFilter> disableLoginFilterAutoRegistration(LoginFilter loginFilter) {
+        FilterRegistrationBean<LoginFilter> registration = new FilterRegistrationBean<>(loginFilter);
+        registration.setEnabled(false);
+        return registration;
+    }
 
     @Bean
     @Order(1)
