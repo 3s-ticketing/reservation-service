@@ -1,12 +1,6 @@
 package org.ticketing.reservation.domain.event;
 
-import org.ticketing.reservation.domain.event.payload.ReservationCancelledEvent;
-import org.ticketing.reservation.domain.event.payload.ReservationCompletedEvent;
-import org.ticketing.reservation.domain.event.payload.ReservationCreatedEvent;
-import org.ticketing.reservation.domain.event.payload.ReservationExpiredEvent;
-import org.ticketing.reservation.domain.event.payload.ReservationSeatHeldEvent;
-import org.ticketing.reservation.domain.event.payload.ReservationSeatReleasedEvent;
-import org.ticketing.reservation.domain.event.payload.ReservationSeatReservedEvent;
+import org.ticketing.reservation.domain.event.payload.*;
 
 /**
  * Reservation 어그리게이트가 외부 세계로 발행하는 도메인 이벤트의 게이트웨이.
@@ -25,6 +19,8 @@ public interface ReservationEventPublisher {
     void publishCancelled(ReservationCancelledEvent event);
 
     void publishExpired(ReservationExpiredEvent event);
+
+    void publishConfirmationFailed(ReservationConfirmationFailedEvent event);
 
     // 좌석 라이프사이클 (Reservation 어그리게이트 내부에서 발생)
     void publishSeatHeld(ReservationSeatHeldEvent event);

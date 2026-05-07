@@ -4,12 +4,13 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -33,11 +34,11 @@ public class ReservationSeatController {
     @PostMapping("/hold")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public void holdSeat(
-            @RequestHeader("X-User-Id") UUID userId,
+            @AuthenticationPrincipal Jwt jwt,
             @RequestBody HoldReservationSeatRequest request
     ) {
         reservationSeatService.holdSeat(
-                new HoldReservationSeatCommand(userId, request.reservationId(), request.seatId())
+                new HoldReservationSeatCommand(extractUserId(jwt), request.reservationId(), request.seatId())
         );
     }
 
@@ -45,29 +46,29 @@ public class ReservationSeatController {
     @PostMapping("/confirm")
     @ResponseStatus(HttpStatus.CREATED)
     public ReservationSeatResult confirmReservationSeat(
-            @RequestHeader("X-User-Id") UUID userId,
+            @AuthenticationPrincipal Jwt jwt,
             @RequestBody ConfirmReservationSeatRequest request
     ) {
         return reservationSeatService.confirmReservationSeat(
-                new ConfirmReservationSeatCommand(userId, request.reservationId(), request.seatId())
+                new ConfirmReservationSeatCommand(extractUserId(jwt), request.reservationId(), request.seatId())
         );
     }
 
     // 개별 좌석 취소 (RESERVED -> CANCELED)
     @DeleteMapping("/{reservationSeatId}")
     public ReservationSeatResult cancelReservationSeat(
-            @RequestHeader("X-User-Id") UUID userId,
+            @AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID reservationSeatId
     ) {
         return reservationSeatService.cancelReservationSeat(
-                new CancelReservationSeatCommand(userId, reservationSeatId)
+                new CancelReservationSeatCommand(extractUserId(jwt), reservationSeatId)
         );
     }
 
     // 예약 좌석 상세 조회
     @GetMapping("/{reservationSeatId}")
     public ReservationSeatResult getReservationSeat(
-            @RequestHeader("X-User-Id") UUID userId,
+            @AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID reservationSeatId
     ) {
         return reservationSeatService.getReservationSeat(reservationSeatId);
@@ -76,9 +77,13 @@ public class ReservationSeatController {
     // 예매의 전체 좌석 조회
     @GetMapping
     public List<ReservationSeatResult> getReservationSeats(
-            @RequestHeader("X-User-Id") UUID userId,
+            @AuthenticationPrincipal Jwt jwt,
             @RequestParam UUID reservationId
     ) {
         return reservationSeatService.getReservationSeats(reservationId);
+    }
+
+    private UUID extractUserId(Jwt jwt) {
+        return UUID.fromString(jwt.getSubject());
     }
 }

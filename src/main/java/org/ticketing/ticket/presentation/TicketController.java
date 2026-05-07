@@ -1,6 +1,5 @@
 package org.ticketing.ticket.presentation;
 
-import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -19,6 +18,7 @@ import org.ticketing.ticket.application.dto.command.IssueTicketCommand;
 import org.ticketing.ticket.application.dto.command.UseTicketCommand;
 import org.ticketing.ticket.application.dto.result.TicketResult;
 import org.ticketing.ticket.application.service.TicketService;
+import org.ticketing.common.exception.ForbiddenException;
 
 @RestController
 @RequestMapping("/api/tickets")
@@ -55,9 +55,11 @@ public class TicketController {
     @PatchMapping("/{ticketId}/cancel")
     public TicketResult cancel(
             @PathVariable UUID ticketId,
-            @RequestHeader("X-User-Id") UUID userId
+            @RequestHeader("X-User-Id") UUID userId,
+            @RequestHeader(value = "X-User-Role", defaultValue = "USER") String role
     ) {
-        return ticketService.cancel(new CancelTicketCommand(ticketId, userId));
+        boolean isAdmin = role.equals("ADMIN") || role.equals("CLUB_ADMIN");
+        return ticketService.cancel(new CancelTicketCommand(ticketId, userId, isAdmin));
     }
 
     // 티켓 삭제
@@ -73,18 +75,32 @@ public class TicketController {
     // 쿼리
     // 예매 티켓 상세 조회
     @GetMapping("/reservation/{reservationId}")
-    public TicketResult getTicketByReservation(@PathVariable UUID reservationId) {
-        return ticketService.getTicketByReservation(reservationId);
+    public TicketResult getTicketByReservation(
+            @PathVariable UUID reservationId,
+            @RequestHeader("X-User-Id") UUID userId,
+            @RequestHeader(value = "X-User-Role", defaultValue = "USER") String role
+    ) {
+        boolean isAdmin = role.equals("ADMIN") || role.equals("CLUB_ADMIN");
+        return ticketService.getTicketByReservation(reservationId, userId, isAdmin);
     }
 
     @PatchMapping("/verify")
     public TicketResult verify(
             @RequestParam UUID reservationId,
+            @RequestParam UUID userId,
             @RequestHeader("X-User-Id") UUID adminId,
             @RequestHeader(value = "X-User-Role", defaultValue = "USER") String role
     ) {
-        TicketResult ticket = ticketService.getTicketByReservation(reservationId);
         boolean isAdmin = role.equals("ADMIN") || role.equals("CLUB_ADMIN");
-        return ticketService.use(new UseTicketCommand(ticket.id(), adminId, isAdmin));
+        if (!isAdmin) {
+            throw new ForbiddenException("입장 처리 권한이 없습니다.");
+        }
+
+        TicketResult ticket = ticketService.getTicketByReservation(reservationId, userId, false);
+        if (!ticket.userId().equals(userId)) {
+            throw new ForbiddenException("QR 코드 소유자가 일치하지 않습니다.");
+        }
+
+        return ticketService.use(new UseTicketCommand(ticket.id(), adminId, true));
     }
 }

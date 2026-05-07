@@ -58,7 +58,6 @@ public class ReservationSeatService {
 
         UUID matchId = reservation.getMatchId();
 
-        // DB RESERVED 수 — Lua 스크립트에 전달해 Redis live HOLD 수와 합산 후 cap 검사
         int reservedCount = (int) reservation.getSeats().stream()
                 .filter(seat -> seat.getSeatStatus().isActive())
                 .count();
@@ -67,7 +66,6 @@ public class ReservationSeatService {
             throw new BadRequestException("유효하지 않은 좌석입니다.");
         }
 
-        // DB RESERVED 체크 — Redis key 가 TTL 만료돼도 DB 행이 남은 엣지 케이스 대비
         reservationSeatRepository.findActiveByMatchIdAndSeatId(matchId, command.seatId())
                 .ifPresent(rs -> {
                     throw new SeatAlreadyHeldException(matchId, command.seatId());
@@ -78,10 +76,9 @@ public class ReservationSeatService {
                 command.userId(),
                 matchId,
                 command.seatId(),
-                OffsetDateTime.now().plusSeconds(660)  // 결제 윈도우(600s) + 유예(60s)
+                OffsetDateTime.now().plusSeconds(660)
         );
 
-        // 단일 Lua 스크립트로 원자적으로: cap 검사 + stale 정리 + SETNX + holds 갱신
         HoldResult holdResult = seatHoldRepository.hold(
                 matchId, command.seatId(), seatHold, reservedCount, MAX_SEAT_PER_RESERVATION);
         switch (holdResult) {
@@ -133,8 +130,6 @@ public class ReservationSeatService {
                 .findFirst()
                 .orElse(newSeat);
 
-        // HOLD → RESERVED 전이. ticketOpenAt 기반 TTL 적용.
-        // (TTL 정책이 ticketOpenAt 미수신 시 fallback 사용)
         Duration reservedTtl = reservedTtlPolicy.ttlFor(matchId);
         SeatHold reservedPayload = SeatHold.reserved(
                 command.reservationId(),
@@ -146,9 +141,6 @@ public class ReservationSeatService {
         boolean confirmed = seatHoldRepository.confirm(
                 matchId, command.seatId(), reservedPayload, reservedTtl);
         if (!confirmed) {
-            // HOLD 만료 또는 owner 불일치 — 트랜잭션을 롤백시켜 DB 행 삽입도 취소한다.
-            // saveAndFlush 는 flush(SQL 전송)만 했을 뿐 아직 커밋되지 않았으므로
-            // 예외를 던지면 @Transactional 이 롤백을 보장한다.
             throw new ConflictException(
                     "좌석 선점 정보가 만료되었거나 전이에 실패했습니다. 다시 시도해 주세요.");
         }
@@ -171,15 +163,22 @@ public class ReservationSeatService {
                 .orElseThrow(() -> new ReservationSeatNotFoundException(command.reservationSeatId()));
 
         Reservation reservation = seat.getReservation();
-        UUID matchId = reservation.getMatchId();    // afterCommit 훅에서 사용
+
+        // 소유권 검증 — 본인 좌석만 취소 가능
+        if (!reservation.getUserId().equals(command.userId())) {
+            throw new ForbiddenException("본인의 좌석만 취소할 수 있습니다.");
+        }
+
+        UUID matchId = reservation.getMatchId();
         UUID seatId = seat.getSeatId();
+        UUID reservationId = reservation.getId();
 
         ReservationSeat canceled = reservation.releaseSeat(command.reservationSeatId());
         reservation.recalculateTotalPrice();
         reservationRepository.save(reservation);
 
         // DB tx 커밋 후 Redis 락 해제 — 롤백 시 Redis 가 먼저 풀리는 일을 막는다.
-        registerRedisReleaseAfterCommit(matchId, seatId);
+        registerRedisReleaseAfterCommit(matchId, seatId, reservationId, command.userId());
 
         eventPublisher.publishReleased(new ReservationSeatReleasedEvent(
                 canceled.getId(),
@@ -196,16 +195,17 @@ public class ReservationSeatService {
     /**
      * Redis 좌석 락 해제를 현재 트랜잭션의 afterCommit 페이즈에 예약한다.
      *
-     * <p>트랜잭션 컨텍스트 밖에서 호출되면 즉시 실행한다(보호적 fallback).
+     * <p>소유권 검증 후 삭제(releaseIfOwnedBy)로 다른 사용자의 키를 실수로 삭제하는 것을 방지한다.
      * release 실패는 로그만 남기고 무시 — TTL 자연 만료 또는 reconciliation 잡으로 보완.
      */
-    private void registerRedisReleaseAfterCommit(UUID matchId, UUID seatId) {
+    private void registerRedisReleaseAfterCommit(
+            UUID matchId, UUID seatId, UUID reservationId, UUID userId) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
                     try {
-                        seatHoldRepository.release(matchId, seatId);
+                        seatHoldRepository.releaseIfOwnedBy(matchId, seatId, reservationId, userId);
                     } catch (Exception e) {
                         log.warn("[Redis] afterCommit 락 해제 실패 — 자연 만료 대기. "
                                 + "matchId={}, seatId={}", matchId, seatId, e);
@@ -214,7 +214,7 @@ public class ReservationSeatService {
             });
         } else {
             try {
-                seatHoldRepository.release(matchId, seatId);
+                seatHoldRepository.releaseIfOwnedBy(matchId, seatId, reservationId, userId);
             } catch (Exception e) {
                 log.warn("[Redis] 락 해제 실패 — 자연 만료 대기. matchId={}, seatId={}",
                         matchId, seatId, e);
@@ -224,7 +224,11 @@ public class ReservationSeatService {
 
     @Transactional
     public void releaseHold(UUID matchId, UUID seatId) {
-        seatHoldRepository.release(matchId, seatId);
+        seatHoldRepository.find(matchId, seatId)
+                .ifPresent(hold ->
+                        seatHoldRepository.releaseIfOwnedBy(
+                                matchId, seatId, hold.reservationId(), hold.userId())
+                );
     }
 
     public ReservationSeatResult getReservationSeat(UUID reservationSeatId) {

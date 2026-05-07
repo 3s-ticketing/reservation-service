@@ -13,6 +13,7 @@ public class SimpleQrProvider implements QrProvider {
 
     @Override
     public String issueQr(UUID reservationId, UUID userId) {
-        return baseUrl + "/api/tickets/verify?reservationId=" + reservationId;
+        return baseUrl + "/api/tickets/verify?reservationId=" + reservationId
+                + "&userId=" + userId;
     }
 }

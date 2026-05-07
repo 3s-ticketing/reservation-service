@@ -25,6 +25,8 @@ import org.ticketing.reservation.domain.model.redis.SeatHold;
 import org.ticketing.reservation.domain.repository.ReservationRepository;
 import org.ticketing.reservation.domain.service.SeatHoldRepository;
 import org.ticketing.reservation.infrastructure.redis.SeatReservedTtlPolicy;
+import org.ticketing.ticket.application.dto.command.IssueTicketCommand;
+import org.ticketing.ticket.application.service.TicketService;
 
 /**
  * 예매 어그리게이트 오케스트레이션 서비스.
@@ -54,6 +56,7 @@ public class ReservationApplicationService {
     private final ReservationWriteService reservationWriteService;
     private final SeatHoldRepository seatHoldRepository;
     private final SeatReservedTtlPolicy reservedTtlPolicy;
+    private final TicketService ticketService;
 
     // ──────────────────────────────────────────
     // 커맨드 — 예매 라이프사이클
@@ -101,6 +104,11 @@ public class ReservationApplicationService {
         SeatCleanupTarget target = collectActiveSeats(command.reservationId());
         ReservationResult result = reservationWriteService.confirm(command);
         confirmSeatsAfterCommit(target);
+
+        ticketService.issue(new IssueTicketCommand(
+                target.userId(),
+                target.reservationId()
+        ));
         return result;
     }
 
