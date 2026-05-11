@@ -13,6 +13,7 @@ public record ReservationSeatReleasedEvent(
         UUID reservationId,
         UUID matchId,
         UUID seatId,
+        UUID seatGradeId,
         ReservationSeatStatus reason,
         OffsetDateTime releasedAt
 ) {

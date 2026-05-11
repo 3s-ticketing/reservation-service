@@ -37,3 +37,9 @@ eureka:
   client:
     register-with-eureka: true
     fetch-registry: true
+
+topics:
+  reservation:
+    seat:
+      reserved: reservation.seat.reserved
+      released: reservation.seat.released

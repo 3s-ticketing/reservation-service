@@ -27,6 +27,12 @@ public class KafkaTopicConfig {
     @Value("${topics.reservation.canceled:reservation.canceled}")
     private String reservationCanceledTopic;
 
+    @Value("${topics.reservation.seat.reserved:reservation.seat.reserved}")
+    private String reservationSeatReservedTopic;
+
+    @Value("${topics.reservation.seat.released:reservation.seat.released}")
+    private String reservationSeatReleasedTopic;
+
     @Bean
     public NewTopic reservationConfirmationFailedTopic() {
         return TopicBuilder.name(reservationConfirmationFailedTopic)
@@ -38,6 +44,22 @@ public class KafkaTopicConfig {
     @Bean
     public NewTopic reservationCanceledTopic() {
         return TopicBuilder.name(reservationCanceledTopic)
+                .partitions(partitions)
+                .replicas(replicas)
+                .build();
+    }
+
+    @Bean
+    public NewTopic reservationSeatReservedTopic() {
+        return TopicBuilder.name(reservationSeatReservedTopic)
+                .partitions(partitions)
+                .replicas(replicas)
+                .build();
+    }
+
+    @Bean
+    public NewTopic reservationSeatReleasedTopic() {
+        return TopicBuilder.name(reservationSeatReleasedTopic)
                 .partitions(partitions)
                 .replicas(replicas)
                 .build();

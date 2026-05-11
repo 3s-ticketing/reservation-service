@@ -11,6 +11,7 @@ public record ReservationSeatReservedEvent(
         UUID reservationId,
         UUID matchId,
         UUID seatId,
+        UUID seatGradeId,
         OffsetDateTime reservedAt
 ) {
 }
