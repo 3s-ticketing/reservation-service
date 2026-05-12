@@ -10,10 +10,6 @@ import java.util.UUID;
  * infrastructure.provider 에 위치하여 FeignClient 호출을 위임한다.
  */
 public interface SeatProvider {
-
-    /** 좌석이 존재하고 본 경기에 사용 가능한지 검증. */
-    boolean existsAndUsable(UUID matchId, UUID seatId);
-
     /**
      * 외부 좌석 메타 정보 스냅샷.
      */

@@ -62,10 +62,6 @@ public class ReservationSeatService {
                 .filter(seat -> seat.getSeatStatus().isActive())
                 .count();
 
-        if (!seatProvider.existsAndUsable(matchId, command.seatId())) {
-            throw new BadRequestException("유효하지 않은 좌석입니다.");
-        }
-
         reservationSeatRepository.findActiveByMatchIdAndSeatId(matchId, command.seatId())
                 .ifPresent(rs -> {
                     throw new SeatAlreadyHeldException(matchId, command.seatId());
@@ -222,15 +218,6 @@ public class ReservationSeatService {
                         matchId, seatId, e);
             }
         }
-    }
-
-    @Transactional
-    public void releaseHold(UUID matchId, UUID seatId) {
-        seatHoldRepository.find(matchId, seatId)
-                .ifPresent(hold ->
-                        seatHoldRepository.releaseIfOwnedBy(
-                                matchId, seatId, hold.reservationId(), hold.userId())
-                );
     }
 
     public ReservationSeatResult getReservationSeat(UUID reservationSeatId) {
