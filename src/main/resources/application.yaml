@@ -10,3 +10,12 @@ spring:
       resourceserver:
         jwt:
           issuer-uri: http://localhost:18080/realms/ticketing
+
+management:
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus

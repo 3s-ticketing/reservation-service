@@ -150,6 +150,7 @@ public class ReservationSeatService {
                 saved.getId(),
                 matchId,
                 savedSeat.getSeatId(),
+                savedSeat.getSeatGradeId(),
                 OffsetDateTime.now()
         ));
 
@@ -185,6 +186,7 @@ public class ReservationSeatService {
                 reservation.getId(),
                 reservation.getMatchId(),
                 canceled.getSeatId(),
+                canceled.getSeatGradeId(),
                 ReservationSeatStatus.CANCELED,
                 OffsetDateTime.now()
         ));
