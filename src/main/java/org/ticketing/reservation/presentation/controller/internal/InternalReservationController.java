@@ -12,6 +12,7 @@ import org.ticketing.reservation.application.dto.result.ReservationResult;
 import org.ticketing.reservation.application.service.ReservationApplicationService;
 import org.ticketing.reservation.domain.model.ReservationStatus;
 import org.ticketing.reservation.domain.service.SeatHoldRepository;
+import org.ticketing.reservation.presentation.dto.internal.InternalReservationDetailResponse;
 import org.ticketing.reservation.presentation.dto.internal.InternalReservationResponse;
 import org.ticketing.reservation.presentation.dto.internal.InternalReservationStatusResponse;
 
@@ -54,6 +55,25 @@ public class InternalReservationController {
 
         return ResponseEntity.ok(
                 InternalReservationStatusResponse.from(reservationId, isPending && allSeatsHeld)
+        );
+    }
+
+    @GetMapping("/{reservationId}/detail")
+    public ResponseEntity<InternalReservationDetailResponse> getReservationDetail(
+            @PathVariable UUID reservationId
+    ) {
+        ReservationResult result = reservationApplicationService.findById(
+                new GetReservationQuery(reservationId)
+        );
+
+        boolean isPending = result.status() == ReservationStatus.PENDING;
+        boolean allSeatsHeld = result.seats().stream()
+                .allMatch(seat -> seatHoldRepository
+                        .find(result.matchId(), seat.seatId())
+                        .isPresent());
+
+        return ResponseEntity.ok(
+                InternalReservationDetailResponse.from(result, isPending && allSeatsHeld)
         );
     }
 }
