@@ -17,6 +17,8 @@ import org.ticketing.reservation.application.dto.command.ExpireReservationComman
 import org.ticketing.reservation.application.dto.query.GetMyReservationsQuery;
 import org.ticketing.reservation.application.dto.query.GetReservationQuery;
 import org.ticketing.reservation.application.dto.result.ReservationResult;
+import org.ticketing.reservation.domain.event.ReservationEventPublisher;
+import org.ticketing.reservation.domain.event.payload.ReservationCompletedEvent;
 import org.ticketing.reservation.domain.exception.ReservationNotFoundException;
 import org.ticketing.reservation.domain.model.Reservation;
 import org.ticketing.reservation.domain.model.ReservationSeat;
@@ -57,6 +59,8 @@ public class ReservationApplicationService {
     private final SeatHoldRepository seatHoldRepository;
     private final SeatReservedTtlPolicy reservedTtlPolicy;
     private final TicketService ticketService;
+    private final ReservationEventPublisher eventPublisher;
+
 
     // ──────────────────────────────────────────
     // 커맨드 — 예매 라이프사이클
@@ -109,6 +113,15 @@ public class ReservationApplicationService {
                 target.userId(),
                 target.reservationId()
         ));
+
+        eventPublisher.publishCompleted(new ReservationCompletedEvent(
+                result.id(),
+                result.userId(),
+                result.matchId(),
+                result.totalPrice(),
+                OffsetDateTime.now()
+        ));
+
         return result;
     }
 

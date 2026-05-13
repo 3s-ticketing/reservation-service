@@ -88,14 +88,6 @@ public class ReservationWriteService {
         Reservation reservation = getActive(command.reservationId());
         reservation.complete();
 
-        eventPublisher.publishCompleted(new ReservationCompletedEvent(
-                reservation.getId(),
-                reservation.getUserId(),
-                reservation.getMatchId(),
-                reservation.getTotalPrice(),
-                OffsetDateTime.now()
-        ));
-
         return ReservationResult.from(reservation);
     }
 
