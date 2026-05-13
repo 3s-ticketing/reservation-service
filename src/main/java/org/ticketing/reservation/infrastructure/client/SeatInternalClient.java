@@ -13,6 +13,4 @@ public interface SeatInternalClient {
     @GetMapping("/internal/seats/{seatId}")
     SeatResponse getSeat(@PathVariable UUID seatId);
 
-    @GetMapping("/internal/seats/{seatId}/exists")
-    boolean existsSeat(@PathVariable UUID seatId);
 }
