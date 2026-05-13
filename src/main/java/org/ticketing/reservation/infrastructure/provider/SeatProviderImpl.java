@@ -19,8 +19,8 @@ public class SeatProviderImpl implements SeatProvider {
 
     @Override
     public SeatSnapshot fetchSnapshot(UUID matchId, UUID seatId) {
-        SeatResponse seat = seatInternalClient.getSeat(seatId);
-        SeatGradePriceResponse price = matchInternalClient.getSeatGradePrice(matchId, seat.seatGradeId());
+        SeatResponse seat = seatInternalClient.getSeat(seatId).data();
+        SeatGradePriceResponse price = matchInternalClient.getSeatGradePrice(matchId, seat.seatGradeId()).data();
 
         return new SeatSnapshot(
                 seat.seatId(),

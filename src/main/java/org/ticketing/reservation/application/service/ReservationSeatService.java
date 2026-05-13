@@ -14,7 +14,7 @@ import org.ticketing.reservation.application.dto.command.CancelReservationSeatCo
 import org.ticketing.reservation.application.dto.command.ConfirmReservationSeatCommand;
 import org.ticketing.reservation.application.dto.command.HoldReservationSeatCommand;
 import org.ticketing.reservation.application.dto.result.ReservationSeatResult;
-import org.ticketing.reservation.domain.event.ReservationSeatEventPublisher;
+import org.ticketing.reservation.domain.event.ReservationEventPublisher;
 import org.ticketing.reservation.domain.event.payload.ReservationSeatHeldEvent;
 import org.ticketing.reservation.domain.event.payload.ReservationSeatReleasedEvent;
 import org.ticketing.reservation.domain.event.payload.ReservationSeatReservedEvent;
@@ -48,7 +48,7 @@ public class ReservationSeatService {
     private final SeatHoldRepository seatHoldRepository;
     private final SeatReservedTtlPolicy reservedTtlPolicy;
     private final SeatProvider seatProvider;
-    private final ReservationSeatEventPublisher eventPublisher;
+    private final ReservationEventPublisher eventPublisher;
 
     @Transactional
     public void holdSeat(HoldReservationSeatCommand command) {

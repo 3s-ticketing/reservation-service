@@ -27,8 +27,6 @@ import org.ticketing.reservation.domain.model.redis.SeatHold;
 import org.ticketing.reservation.domain.repository.ReservationRepository;
 import org.ticketing.reservation.domain.service.SeatHoldRepository;
 import org.ticketing.reservation.infrastructure.redis.SeatReservedTtlPolicy;
-import org.ticketing.ticket.application.dto.command.IssueTicketCommand;
-import org.ticketing.ticket.application.service.TicketService;
 
 /**
  * 예매 어그리게이트 오케스트레이션 서비스.
@@ -58,7 +56,6 @@ public class ReservationApplicationService {
     private final ReservationWriteService reservationWriteService;
     private final SeatHoldRepository seatHoldRepository;
     private final SeatReservedTtlPolicy reservedTtlPolicy;
-    private final TicketService ticketService;
     private final ReservationEventPublisher eventPublisher;
 
 
@@ -108,11 +105,6 @@ public class ReservationApplicationService {
         SeatCleanupTarget target = collectActiveSeats(command.reservationId());
         ReservationResult result = reservationWriteService.confirm(command);
         confirmSeatsAfterCommit(target);
-
-        ticketService.issue(new IssueTicketCommand(
-                target.userId(),
-                target.reservationId()
-        ));
 
         eventPublisher.publishCompleted(new ReservationCompletedEvent(
                 result.id(),
@@ -253,7 +245,7 @@ public class ReservationApplicationService {
      * <p>주의: {@code findActiveById} 구현이 변경되어 즉시 로딩 보장이 사라지면
      * 이 메서드도 함께 재검토해야 한다.
      */
-    protected SeatCleanupTarget collectActiveSeats(UUID reservationId) {
+    SeatCleanupTarget collectActiveSeats(UUID reservationId) {
         Reservation reservation = reservationRepository.findActiveById(reservationId)
                 .orElseThrow(() -> new ReservationNotFoundException(reservationId));
         List<UUID> seatIds = reservation.getSeats().stream()

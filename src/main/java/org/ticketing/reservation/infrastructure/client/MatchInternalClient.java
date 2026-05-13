@@ -3,6 +3,7 @@ package org.ticketing.reservation.infrastructure.client;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.ticketing.common.response.CommonResponse;
 import org.ticketing.reservation.infrastructure.client.dto.SeatGradePriceResponse;
 
 import java.util.UUID;
@@ -11,7 +12,7 @@ import java.util.UUID;
 public interface MatchInternalClient {
 
     @GetMapping("/internal/matches/{matchId}/seat-grades/{seatGradeId}")
-    SeatGradePriceResponse getSeatGradePrice(
+    CommonResponse<SeatGradePriceResponse> getSeatGradePrice(
             @PathVariable UUID matchId,
             @PathVariable UUID seatGradeId
     );

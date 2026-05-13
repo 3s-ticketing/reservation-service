@@ -10,22 +10,16 @@ import org.ticketing.reservation.domain.event.payload.*;
  * {@code infrastructure.messaging.kafka.producer.ReservationEventPublisherImpl} 이 담당한다.
  */
 public interface ReservationEventPublisher {
-
-    // 예매 라이프사이클
-    void publishCreated(ReservationCreatedEvent event);
-
     void publishCompleted(ReservationCompletedEvent event);
 
     void publishCancelled(ReservationCancelledEvent event);
 
-    void publishExpired(ReservationExpiredEvent event);
-
     void publishConfirmationFailed(ReservationConfirmationFailedEvent event);
 
-    // 좌석 라이프사이클 (Reservation 어그리게이트 내부에서 발생)
-    void publishSeatHeld(ReservationSeatHeldEvent event);
+    void publishHeld(ReservationSeatHeldEvent event);
 
-    void publishSeatReserved(ReservationSeatReservedEvent event);
+    void publishReserved(ReservationSeatReservedEvent event);
 
-    void publishSeatReleased(ReservationSeatReleasedEvent event);
+    void publishReleased(ReservationSeatReleasedEvent event);
+
 }
