@@ -54,7 +54,7 @@ public class ReservationEventPublisherImpl
     @Value("${topics.reservation.canceled:reservation.canceled}")
     private String canceledTopic;
 
-    @Value("${topics.reservation.confirmation-failed:reservation.confirmation.failed}")
+    @Value("${topics.reservation.confirmation.failed:reservation.confirmation.failed}")
     private String confirmationFailedTopic;
 
     @Value("${topics.reservation.seat.reserved:reservation.seat.reserved}")
