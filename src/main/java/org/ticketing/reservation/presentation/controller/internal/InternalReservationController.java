@@ -48,7 +48,9 @@ public class InternalReservationController {
 
         boolean isPending = result.status() == ReservationStatus.PENDING;
 
-        boolean allSeatsHeld = result.seats().stream()
+        // allMatch()는 빈 스트림에서 true를 반환(vacuous truth)하므로 좌석 존재 여부를 먼저 검증한다.
+        boolean hasSeats = !result.seats().isEmpty();
+        boolean allSeatsHeld = hasSeats && result.seats().stream()
                 .allMatch(seat -> seatHoldRepository
                         .find(result.matchId(), seat.seatId())
                         .isPresent());
@@ -67,7 +69,8 @@ public class InternalReservationController {
         );
 
         boolean isPending = result.status() == ReservationStatus.PENDING;
-        boolean allSeatsHeld = result.seats().stream()
+        boolean hasSeats = !result.seats().isEmpty();
+        boolean allSeatsHeld = hasSeats && result.seats().stream()
                 .allMatch(seat -> seatHoldRepository
                         .find(result.matchId(), seat.seatId())
                         .isPresent());
