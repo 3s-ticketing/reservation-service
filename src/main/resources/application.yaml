@@ -5,21 +5,22 @@ spring:
   config:
     import: optional:configserver:http://localhost:10002
 
-services:
-  seat:
-    url: ${SEAT_SERVICE_URL:http://seat-service:20004}
-  match:
-    url: ${MATCH_SERVICE_URL:http://match-service:20002}
-  payment:
-    url: ${PAYMENT_SERVICE_URL:http://payment-service:20006}
-
   security:
     oauth2:
       resourceserver:
         jwt:
           issuer-uri: http://localhost:18080/realms/ticketing
 
-spring:
+  data:
+    redis:
+      lettuce:
+        pool:
+          enabled: true      # commons-pool2 의존성만으로는 풀이 활성화되지 않음 — 명시 필요
+          max-active: 100    # 좌석 hold 동시 처리량에 맞춰 여유 있게 설정
+          max-idle: 20
+          min-idle: 5
+          max-wait: 500ms
+
   cloud:
     openfeign:
       client:
@@ -30,6 +31,17 @@ spring:
           match-service:
             connectTimeout: 1000
             readTimeout: 2000
+          payment-service:
+            connectTimeout: 1000
+            readTimeout: 2000
+
+services:
+  seat:
+    url: ${SEAT_SERVICE_URL:http://seat-service:20004}
+  match:
+    url: ${MATCH_SERVICE_URL:http://match-service:20002}
+  payment:
+    url: ${PAYMENT_SERVICE_URL:http://payment-service:20006}
 
 resilience4j:
   circuitbreaker:
