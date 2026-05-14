@@ -11,6 +11,58 @@ spring:
         jwt:
           issuer-uri: http://localhost:18080/realms/ticketing
 
+  data:
+    redis:
+      lettuce:
+        pool:
+          enabled: true      # commons-pool2 의존성만으로는 풀이 활성화되지 않음 — 명시 필요
+          max-active: 100    # 좌석 hold 동시 처리량에 맞춰 여유 있게 설정
+          max-idle: 20
+          min-idle: 5
+          max-wait: 500ms
+
+  cloud:
+    openfeign:
+      client:
+        config:
+          seat-service:
+            connectTimeout: 1000   # 1초
+            readTimeout: 2000      # 2초
+          match-service:
+            connectTimeout: 1000
+            readTimeout: 2000
+          payment-service:
+            connectTimeout: 1000
+            readTimeout: 2000
+
+services:
+  seat:
+    url: ${SEAT_SERVICE_URL:http://seat-service:20004}
+  match:
+    url: ${MATCH_SERVICE_URL:http://match-service:20002}
+  payment:
+    url: ${PAYMENT_SERVICE_URL:http://payment-service:20006}
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      seatService:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        failureRateThreshold: 50          # 10건 중 5건 실패 시 OPEN
+        waitDurationInOpenState: 30s      # 30초 후 HALF-OPEN 전환
+        permittedNumberOfCallsInHalfOpenState: 3
+        slowCallDurationThreshold: 2s     # 2초 초과 = slow call
+        slowCallRateThreshold: 80         # slow call 80% 이상이면 OPEN
+      matchService:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 30s
+        permittedNumberOfCallsInHalfOpenState: 3
+        slowCallDurationThreshold: 2s
+        slowCallRateThreshold: 80
+
 management:
   metrics:
     tags:
@@ -19,3 +71,6 @@ management:
     web:
       exposure:
         include: health,info,prometheus
+  health:
+    circuitbreakers:
+      enabled: true
