@@ -10,6 +10,8 @@ services:
     url: ${SEAT_SERVICE_URL:http://seat-service:20004}
   match:
     url: ${MATCH_SERVICE_URL:http://match-service:20002}
+  payment:
+    url: ${PAYMENT_SERVICE_URL:http://payment-service:20006}
 
   security:
     oauth2:

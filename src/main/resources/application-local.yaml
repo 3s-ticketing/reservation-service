@@ -49,3 +49,5 @@ services:
     url: http://localhost:20004
   match:
     url: http://localhost:20002
+  payment:
+    url: http://localhost:20006
