@@ -43,3 +43,9 @@ topics:
     seat:
       reserved: reservation.seat.reserved
       released: reservation.seat.released
+
+services:
+  seat:
+    url: http://localhost:20004
+  match:
+    url: http://localhost:20002
