@@ -1,5 +1,6 @@
 package org.ticketing.reservation.application.service;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -12,6 +13,7 @@ import org.ticketing.reservation.application.dto.command.ExpireReservationComman
 import org.ticketing.reservation.application.dto.result.ReservationResult;
 import org.ticketing.reservation.domain.event.ReservationEventPublisher;
 import org.ticketing.reservation.domain.event.payload.ReservationCancelledEvent;
+import org.ticketing.reservation.domain.event.payload.ReservationCompletedEvent;
 import org.ticketing.reservation.domain.exception.ReservationNotFoundException;
 import org.ticketing.reservation.domain.model.Reservation;
 import org.ticketing.reservation.domain.model.ReservationSeat;
@@ -85,6 +87,7 @@ public class ReservationWriteService {
     public ReservationResult confirm(ConfirmReservationCommand command) {
         Reservation reservation = getActive(command.reservationId());
         reservation.complete();
+
         return ReservationResult.from(reservation);
     }
 

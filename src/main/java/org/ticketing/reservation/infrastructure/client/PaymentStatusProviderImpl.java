@@ -19,8 +19,8 @@ public class PaymentStatusProviderImpl implements PaymentStatusProvider {
     @Override
     public PaymentStatus getPaymentStatus(UUID reservationId) {
         try {
-            PaymentStatusResponse response = paymentStatusClient.getPaymentStatus(reservationId);
-            return switch (response.data().status()) {
+            PaymentStatusResponse response = paymentStatusClient.getPaymentStatus(reservationId).data();
+            return switch (response.status()) {
                 case "SUCCESS" -> PaymentStatus.COMPLETED;
                 case "FAILED", "CANCELED" -> PaymentStatus.FAILED;
                 case "INIT", "IN_PROGRESS" -> PaymentStatus.PENDING;
