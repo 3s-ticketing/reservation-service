@@ -16,9 +16,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.ticketing.reservation.application.dto.command.CancelReservationSeatCommand;
-import org.ticketing.reservation.application.dto.command.ConfirmReservationSeatCommand;
 import org.ticketing.reservation.application.dto.command.HoldReservationSeatCommand;
-import org.ticketing.reservation.application.dto.request.ConfirmReservationSeatRequest;
 import org.ticketing.reservation.application.dto.request.HoldReservationSeatRequest;
 import org.ticketing.reservation.application.dto.result.ReservationSeatResult;
 import org.ticketing.reservation.application.service.ReservationSeatService;
@@ -39,18 +37,6 @@ public class ReservationSeatController {
     ) {
         reservationSeatService.holdSeat(
                 new HoldReservationSeatCommand(extractUserId(jwt), request.reservationId(), request.seatId())
-        );
-    }
-
-    // 결제 확정 - DB INSERT (RESERVED)
-    @PostMapping("/confirm")
-    @ResponseStatus(HttpStatus.CREATED)
-    public ReservationSeatResult confirmReservationSeat(
-            @AuthenticationPrincipal Jwt jwt,
-            @RequestBody ConfirmReservationSeatRequest request
-    ) {
-        return reservationSeatService.confirmReservationSeat(
-                new ConfirmReservationSeatCommand(extractUserId(jwt), request.reservationId(), request.seatId())
         );
     }
 

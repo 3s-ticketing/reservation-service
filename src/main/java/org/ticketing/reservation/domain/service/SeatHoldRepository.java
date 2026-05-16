@@ -66,6 +66,17 @@ public interface SeatHoldRepository {
     /** 현재 락 정보 조회 (HOLD 든 RESERVED 든). */
     Optional<SeatHold> find(UUID matchId, UUID seatId);
 
+    /**
+     * 특정 예매의 미확정(HOLD / EXPIRE_PENDING) 좌석 목록 조회.
+     *
+     * <p>{@code holds:{reservationId}} Set 멤버를 순회하여 살아 있는 좌석 키를 반환한다.
+     * {@link #confirm} 으로 RESERVED 전이된 좌석은 Set 에서 제거되므로 결과에 포함되지 않는다.
+     * TTL 이 만료된 키도 자동으로 제외된다.
+     *
+     * @return 활성 HOLD / EXPIRE_PENDING SeatHold 목록 (없으면 빈 리스트)
+     */
+    List<SeatHold> findAllHeldByReservationId(UUID reservationId);
+
     /** 락 해제. cancel/expire 흐름에서 사용. */
     void release(UUID matchId, UUID seatId);
 
