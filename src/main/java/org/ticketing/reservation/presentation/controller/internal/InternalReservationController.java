@@ -137,6 +137,11 @@ public class InternalReservationController {
      * <p>{@link SeatHoldRepository#confirm} Lua 스크립트가 HOLD/EXPIRE_PENDING 인 경우에만
      * RESERVED 로 전이하고 {@code holds:{reservationId}} Set 에서 제거한다.
      * 두 번째 호출 시 Set 이 비어 있으므로 confirmReservationSeat 를 건너뛴다.
+     *
+     * <h3>부분 실패 처리</h3>
+     * <p>confirm 에 실패한 좌석이 하나라도 있으면 {@code isValid = false} 를 반환해 결제를 차단한다.
+     * 이미 confirm 된 좌석은 DB/Redis 상태를 유지하고, 실패한 좌석은 TTL 자연 만료로 해제된다.
+     * 각 confirm 은 독립 트랜잭션이므로 부분 커밋 롤백은 수행하지 않는다.
      */
     @GetMapping("/{reservationId}/detail")
     public ResponseEntity<InternalReservationDetailResponse> getReservationDetail(
@@ -146,6 +151,7 @@ public class InternalReservationController {
         List<SeatHold> heldSeats = seatHoldRepository.findAllHeldByReservationId(reservationId);
 
         // 2. HOLD 좌석이 있으면 auto-confirm (멱등: 이미 RESERVED 전이된 좌석은 Set에서 제거되어 있음)
+        boolean anyConfirmFailed = false;
         for (SeatHold hold : heldSeats) {
             try {
                 reservationSeatService.confirmReservationSeat(
@@ -156,8 +162,8 @@ public class InternalReservationController {
                         )
                 );
             } catch (Exception e) {
-                // 이미 confirm 되었거나 만료된 경우 무시 (멱등 처리)
-                log.warn("[InternalReservationController] auto-confirm 스킵 — "
+                anyConfirmFailed = true;
+                log.warn("[InternalReservationController] auto-confirm 실패 — "
                         + "reservationId={}, seatId={}, reason={}",
                         reservationId, hold.seatId(), e.getMessage());
             }
@@ -168,13 +174,16 @@ public class InternalReservationController {
                 new GetReservationQuery(reservationId)
         );
 
+        // 4. 유효성 판단: confirm 실패가 하나라도 있으면 isValid = false
         boolean isPending = result.status() == ReservationStatus.PENDING;
         boolean hasSeats = !result.seats().isEmpty();
         boolean allSeatsReservedInRedis = hasSeats && result.seats().stream()
                 .allMatch(seat -> seatHoldRepository.find(result.matchId(), seat.seatId()).isPresent());
 
+        boolean isValid = isPending && allSeatsReservedInRedis && !anyConfirmFailed;
+
         return ResponseEntity.ok(
-                InternalReservationDetailResponse.from(result, isPending && allSeatsReservedInRedis)
+                InternalReservationDetailResponse.from(result, isValid)
         );
     }
 }
