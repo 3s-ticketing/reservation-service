@@ -286,6 +286,32 @@ public class RedisSeatHoldRepository implements SeatHoldRepository {
     }
 
     @Override
+    public List<SeatHold> findAllHeldByReservationId(UUID reservationId) {
+        try {
+            Set<String> members = redisTemplate.opsForSet().members(holdSetKey(reservationId));
+            if (members == null || members.isEmpty()) {
+                return Collections.emptyList();
+            }
+            List<SeatHold> result = new java.util.ArrayList<>();
+            for (String member : members) {
+                String[] parts = member.split(":", 2);
+                if (parts.length != 2) continue;
+                try {
+                    UUID matchId = UUID.fromString(parts[0]);
+                    UUID seatId  = UUID.fromString(parts[1]);
+                    find(matchId, seatId).ifPresent(result::add);
+                } catch (IllegalArgumentException ignored) {
+                    log.warn("[Redis] holds Set 멤버 UUID 파싱 실패 — member={}", member);
+                }
+            }
+            return Collections.unmodifiableList(result);
+        } catch (Exception e) {
+            log.warn("[Redis] findAllHeldByReservationId 실패 — reservationId={}", reservationId, e);
+            return Collections.emptyList();
+        }
+    }
+
+    @Override
     public List<String> findExpiredHoldKeys(long maxEpochSeconds) {
         try {
             Set<String> members = redisTemplate.opsForZSet().rangeByScore(
