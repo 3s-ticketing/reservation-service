@@ -14,7 +14,7 @@ public class TicketIssuanceListener {
 
     private final TicketService ticketService;
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,fallbackExecution = true)
     public void on(ReservationCompletedEvent event) {
         ticketService.issue(new IssueTicketCommand(
                 event.userId(),
