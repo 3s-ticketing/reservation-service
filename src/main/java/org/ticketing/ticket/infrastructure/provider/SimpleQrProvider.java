@@ -8,7 +8,7 @@ import org.ticketing.ticket.domain.service.QrProvider;
 @Component
 public class SimpleQrProvider implements QrProvider {
 
-    @Value("${app.base-url:http://localhost:8082}")
+    @Value("${app.base-url}")
     private String baseUrl;
 
     @Override
