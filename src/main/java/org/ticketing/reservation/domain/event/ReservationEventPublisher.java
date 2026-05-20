@@ -1,0 +1,25 @@
+package org.ticketing.reservation.domain.event;
+
+import org.ticketing.reservation.domain.event.payload.*;
+
+/**
+ * Reservation 어그리게이트가 외부 세계로 발행하는 도메인 이벤트의 게이트웨이.
+ *
+ * <p>예매(루트) 라이프사이클 이벤트와 좌석(자식) 라이프사이클 이벤트를 모두 본 어그리게이트가
+ * 발행한다. 도메인 계층은 인터페이스만 알며, Kafka·Outbox 같은 인프라 결정은
+ * {@code infrastructure.messaging.kafka.producer.ReservationEventPublisherImpl} 이 담당한다.
+ */
+public interface ReservationEventPublisher {
+    void publishCompleted(ReservationCompletedEvent event);
+
+    void publishCancelled(ReservationCancelledEvent event);
+
+    void publishConfirmationFailed(ReservationConfirmationFailedEvent event);
+
+    void publishHeld(ReservationSeatHeldEvent event);
+
+    void publishReserved(ReservationSeatReservedEvent event);
+
+    void publishReleased(ReservationSeatReleasedEvent event);
+
+}

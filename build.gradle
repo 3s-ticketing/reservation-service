@@ -1,0 +1,102 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '3.5.12'
+	id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'org.ticketing'
+version = '0.0.1-SNAPSHOT'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(17)
+	}
+}
+
+ext {
+	set('springCloudVersion', "2025.0.1")
+}
+
+repositories {
+	mavenCentral()
+	maven {
+		name = "GitHubPackages"
+		url = uri("https://maven.pkg.github.com/3s-ticketing/common-module")
+		credentials {
+			username = System.getenv("GPR_USER")
+			password = System.getenv("GPR_TOKEN")
+		}
+	}
+}
+
+dependencyManagement {
+	imports {
+		mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
+	}
+}
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+	// Spring Cloud — common-module 의 transitive 에 의존하지 않고 명시.
+	// (publish 된 common-module 캐시가 transitive 누락된 케이스 대비)
+	implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
+	implementation 'org.springframework.cloud:spring-cloud-starter-config'
+	implementation 'org.springframework.cloud:spring-cloud-starter-openfeign'
+	implementation 'org.springframework.cloud:spring-cloud-starter-circuitbreaker-resilience4j'
+
+	// spring security — Keycloak JWT 검증 (gateway 가 검증한 토큰을 그대로 다시 검증)
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+
+	// 공통 모듈 (org.ticketing:common:2.0-SNAPSHOT 로 publish 됨)
+	implementation 'org.ticketing:common:2.0-SNAPSHOT'
+
+	// 하단에 개별 서비스에 맞는 의존성 추가
+	// Querydsl APT
+	annotationProcessor 'jakarta.annotation:jakarta.annotation-api'
+	annotationProcessor 'jakarta.persistence:jakarta.persistence-api'
+	annotationProcessor 'com.querydsl:querydsl-apt:5.1.0:jakarta'
+	implementation 'com.querydsl:querydsl-jpa:5.1.0:jakarta'
+
+	//lombok
+	compileOnly 'org.projectlombok:lombok'
+	annotationProcessor 'org.projectlombok:lombok'
+	testCompileOnly 'org.projectlombok:lombok'
+	testAnnotationProcessor 'org.projectlombok:lombok'
+
+	//runtime
+	runtimeOnly 'org.postgresql:postgresql'
+	runtimeOnly 'com.h2database:h2'     // local 프로파일 인메모리 DB
+	testRuntimeOnly 'com.h2database:h2'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+	//redis
+	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+	implementation 'org.apache.commons:commons-pool2'  // Lettuce 커넥션 풀 활성화
+
+	implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+
+	runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
+
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}
+
+// QueryDSL Q클래스 생성 경로 설정
+def querydslDir = layout.buildDirectory.dir("querydsl").get().asFile
+sourceSets {
+	main.java.srcDirs += [querydslDir]
+}
+tasks.withType(JavaCompile) {
+	options.getGeneratedSourceOutputDirectory().set(file(querydslDir))
+}
+clean.doLast {
+	file(querydslDir).deleteDir()
+}

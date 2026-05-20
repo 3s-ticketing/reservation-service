@@ -1,0 +1,58 @@
+spring:
+  cloud:
+    config:
+      import-check:
+        enabled: false
+      discovery:
+        enabled: false
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT}/${DB_NAME}?currentSchema=${DB_SCHEMA:reservation}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: ${JPA_DDL_AUTO:create}
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        default_schema: ${DB_SCHEMA:reservation}
+        hbm2ddl:
+          create_schemas: true
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: reservation-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+eureka:
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+
+topics:
+  reservation:
+    seat:
+      reserved: reservation.seat.reserved
+      released: reservation.seat.released
+
+services:
+  seat:
+    url: http://localhost:20004
+  match:
+    url: http://localhost:20002
+  payment:
+    url: http://localhost:20006
